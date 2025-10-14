@@ -10,15 +10,13 @@ export default function AuthenticatedLayout({ header, children }) {
 
     const [isLoading, setIsLoading] = useState(true);
 
-    const withToken = props.emp_data?.token ?? null;
-
-    // console.log(props.emp_data.token);
-
     useEffect(() => {
         authCheck();
     }, [url]);
 
     const authCheck = async () => {
+        setIsLoading(true);
+
         // Check if the URL contains a query parameter "key" (token value): START
         const queryParams = new URLSearchParams(url.split("?")[1]);
         const queryToken = queryParams.get("key");
@@ -29,7 +27,7 @@ export default function AuthenticatedLayout({ header, children }) {
             // Remove query params from the URL without reloading the page
             const cleanUrl = window.location.origin + window.location.pathname;
             window.history.replaceState({}, document.title, cleanUrl);
-            router.post(route("setSession"), { queryToken });
+            router.post(route("setSession"), { queryToken: queryToken });
 
             setIsLoading(false);
         }
@@ -40,7 +38,7 @@ export default function AuthenticatedLayout({ header, children }) {
 
         if (!token) {
             window.location.href = `http://192.168.2.221/authify/public/login?redirect=${encodeURIComponent(
-                window.location.href
+                route("dashboard")
             )}`;
             return;
         }
@@ -58,7 +56,7 @@ export default function AuthenticatedLayout({ header, children }) {
                 localStorage.removeItem("authify-token");
 
                 window.location.href = `http://192.168.2.221/authify/public/login?redirect=${encodeURIComponent(
-                    window.location.href
+                    route("dashboard")
                 )}`;
                 return;
             }
@@ -72,14 +70,15 @@ export default function AuthenticatedLayout({ header, children }) {
 
     return (
         <div className="flex flex-col">
-            {!withToken && <LoadingScreen text="Please wait..." />}
+            {isLoading && <LoadingScreen text="Please wait..." />}
 
-            {/* <LoadingScreen text="Please wait..." /> */}
             <div className="flex h-screen overflow-hidden">
                 <Sidebar />
-                <div className="w-full ">
+                <div className="flex-1 min-w-0">
+                    {" "}
+                    {/* ✅ responsive instead of fixed w-full */}
                     <NavBar />
-                    <main className="h-screen px-6 py-6 pb-[70px] overflow-y-auto">
+                    <main className="h-screen px-4 sm:px-6 py-6 pb-[70px] overflow-y-auto">
                         <div className="">{children}</div>
                     </main>
                 </div>
