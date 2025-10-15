@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { use } from "react";
 import { Table, Input, Button, Space, Select, Tag, Empty } from "antd";
 import {
     SearchOutlined,
@@ -12,81 +12,37 @@ import {
 } from "@ant-design/icons";
 import { usePage, router } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
-
-// DaisyUI-themed StatCard
-const StatCard = ({
-    title,
-    value,
-    color,
-    icon: Icon,
-    onClick,
-    isActive,
-    filterType,
-}) => (
-    <div
-        className={`card cursor-pointer transition-all duration-300 border shadow-md hover:shadow-lg
-            ${
-                isActive
-                    ? "bg-base-100 border-primary"
-                    : "bg-base-200 border-base-300 hover:bg-base-100"
-            }`}
-        onClick={() => onClick(filterType)}
-    >
-        <div className="card-body p-4 flex flex-row items-center justify-between">
-            <div>
-                <p className={`text-sm font-medium text-${color}`}>{title}</p>
-                <p className={`text-2xl font-bold text-${color}`}>{value}</p>
-            </div>
-            <Icon className={`text-${color} text-3xl`} />
-        </div>
-    </div>
-);
+import StatCard from "./StatCard";
+import useTicketTable from "@/Hooks/useTicketTable";
 
 export default function TicketTable() {
     const { tickets } = usePage().props;
+    console.log(usePage().props);
 
-    const [searchText, setSearchText] = useState("");
-    const [selectedProject, setSelectedProject] = useState(null);
-    const [sortOrder, setSortOrder] = useState("desc");
-    const [activeFilter, setActiveFilter] = useState("all");
+    const {
+        searchText,
+        setSearchText,
+        selectedProject,
+        setSelectedProject,
+        sortOrder,
+        setSortOrder,
+        activeFilter,
+        setActiveFilter,
+        projects,
+        statusCounts,
+        filteredTickets,
+    } = useTicketTable(tickets);
 
-    // Extract project list
-    const projects = [...new Set(tickets.map((t) => t.project_name))];
-
-    // Count per status
-    const statusCounts = useMemo(() => {
-        const counts = { all: tickets.length };
-        tickets.forEach((t) => {
-            const s = t.status?.toLowerCase() || "unknown";
-            counts[s] = (counts[s] || 0) + 1;
-        });
-        return counts;
-    }, [tickets]);
-
-    // Filter logic
-    const filteredTickets = useMemo(() => {
-        return tickets
-            .filter((t) => {
-                const matchesSearch =
-                    t.ticket_id
-                        .toLowerCase()
-                        .includes(searchText.toLowerCase()) ||
-                    t.project_name
-                        .toLowerCase()
-                        .includes(searchText.toLowerCase());
-                const matchesProject =
-                    !selectedProject || t.project_name === selectedProject;
-                const matchesStatus =
-                    activeFilter === "all" ||
-                    t.status?.toLowerCase() === activeFilter.toLowerCase();
-                return matchesSearch && matchesProject && matchesStatus;
-            })
-            .sort((a, b) =>
-                sortOrder === "asc"
-                    ? new Date(a.created_at) - new Date(b.created_at)
-                    : new Date(b.created_at) - new Date(a.created_at)
-            );
-    }, [tickets, searchText, selectedProject, sortOrder, activeFilter]);
+    const handleAction = (action, ticketId) => {
+        if (action === "CREATE_CHILD") {
+            // Redirect to ticket creation form with parent_ticket query param
+            window.location.href =
+                route("tickets") + `?parent_ticket=${ticketId}`;
+            return;
+        }
+        const hash = btoa(`${ticketId}:${action}`);
+        router.visit(route("tickets.view", hash), { method: "get" });
+    };
 
     const columns = [
         { title: "Ticket ID", dataIndex: "ticket_id", key: "ticket_id" },
@@ -136,14 +92,6 @@ export default function TicketTable() {
                 ),
         },
     ];
-    const handleAction = (action, ticketId) => {
-        const encodedTicket = btoa(ticketId); // Base64 encode ticket ID
-        const encodedAction = btoa(action); // Base64 encode action name
-
-        console.log(
-            `🧩 Encoded Info -> Ticket: ${encodedTicket}, Action: ${encodedAction}`
-        );
-    };
 
     return (
         <AuthenticatedLayout>

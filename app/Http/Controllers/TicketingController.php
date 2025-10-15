@@ -9,6 +9,7 @@ use Inertia\Response;
 use Illuminate\Support\Facades\Storage;
 use App\Services\DataTableService;
 
+
 class TicketingController extends Controller
 {
     // Status Constants
@@ -107,6 +108,130 @@ class TicketingController extends Controller
             'employeeOptions' => $employeeOptions,
             'projectOptions' => $projectOptions,
             'userAccountType' => $this->getUserAccountType($empData)
+        ]);
+    }
+    public function viewTicket($hash): Response
+    {
+        $decodedData = base64_decode($hash);
+        $parts = explode(':', $decodedData);
+
+        if (count($parts) === 2) {
+            [$ticketId, $action] = $parts;
+        } elseif (count($parts) === 3) {
+            [$ticketId, $action, $userAccountType] = $parts;
+        } else {
+            abort(400, 'Invalid hash format');
+        }
+
+        $ticket = DB::selectOne('
+        SELECT * FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            abort(404, 'Ticket not found');
+        }
+
+        $attachments = DB::select('
+        SELECT * FROM ticket_attachments 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+        ORDER BY UPLOADED_AT DESC
+    ', [$ticket->ID]);
+
+        // Get current user data
+        $empData = session('emp_data');
+        $userRoles = $this->getUserAccountType($empData);
+
+        // Map request type constants to labels
+        $requestTypes = [
+            1 => 'New System',
+            2 => 'Modification',
+            3 => 'Enhancement',
+            4 => 'Adjustment',
+            5 => 'Testing',
+            6 => 'Parallel Run',
+        ];
+
+        // Map status constants
+        $statusTypes = [
+            1 => 'New',
+            2 => 'Triaged',
+            3 => 'Approved',
+            4 => 'In Progress',
+            5 => 'Resolved',
+            6 => 'Closed',
+            7 => 'Rejected',
+            8 => 'On Hold',
+        ];
+
+        // Determine available actions for current user
+        $availableActions = [];
+        $possibleActions = ['ASSESS', 'RETURN', 'DH_APPROVE', 'OD_APPROVE', 'ASSIGN', 'RESOLVE', 'CLOSE', 'TEST'];
+
+        foreach ($possibleActions as $possibleAction) {
+            if ($this->canPerformAction($ticket, $possibleAction, $empData, $userRoles)) {
+                $availableActions[] = $possibleAction;
+            }
+        }
+
+        // Get workflow stage information
+        $workflowStage = $this->getCurrentWorkflowStage($ticket->ID);
+
+        // Get ticket history from default connection
+        $ticketHistory = DB::select('
+        SELECT 
+            tw.*
+        FROM ticket_workflow tw
+        WHERE tw.TICKET_ID = ?
+        ORDER BY tw.ACTION_AT DESC
+    ', [$ticket->ID]);
+
+        // Enrich with employee names from masterlist
+        $ticketHistory = $this->enrichWithEmployeeNames($ticketHistory, 'ACTION_BY');
+        foreach ($ticketHistory as $history) {
+            $history->action_by_name = $history->employee_display;
+        }
+
+        // Get remarks history from default connection
+        $remarksHistory = DB::select('
+        SELECT 
+            rh.*
+        FROM remarks_history rh
+        WHERE rh.TICKET_ID = ?
+        ORDER BY rh.CREATED_AT DESC
+    ', [$ticket->ID]);
+
+        // Enrich with employee names from masterlist
+        $remarksHistory = $this->enrichWithEmployeeNames($remarksHistory, 'CREATED_BY');
+        foreach ($remarksHistory as $remark) {
+            $remark->created_by_name = $remark->employee_display;
+        }
+
+        // Get assigned employee names if ticket is assigned
+        $assignedEmployees = [];
+        if (!empty($ticket->ASSIGNED_TO)) {
+            $assignedEmployees = $this->getAssignedEmployeeNames($ticket->ASSIGNED_TO);
+        }
+
+        // Get programmer options for assignment action
+        $programmerOptions = [];
+        if (in_array('ASSIGN', $availableActions)) {
+            $programmerOptions = $this->getProgrammerOptions();
+        }
+
+        return Inertia::render('Ticketing/ViewDetails', [
+            'ticket' => $ticket,
+            'action' => $action,
+            'attachments' => $attachments,
+            'requestTypes' => $requestTypes,
+            'statusTypes' => $statusTypes,
+            'availableActions' => $availableActions,
+            'workflowStage' => $workflowStage,
+            'ticketHistory' => $ticketHistory,
+            'remarksHistory' => $remarksHistory,
+            'assignedEmployees' => $assignedEmployees,
+            'programmerOptions' => $programmerOptions,
+            'userRoles' => $userRoles,
         ]);
     }
     public function store(Request $request)
@@ -286,18 +411,69 @@ class TicketingController extends Controller
         $orderDir = $request->input('order.0.dir', 'desc');
         $columns = $request->input('columns', []);
 
-        // Build query
-        $query = DB::table('tickets')
-            ->whereNull('DELETED_AT');
+        $query = DB::table('tickets')->whereNull('DELETED_AT');
 
+        // Filter by status/project
         if ($request->filled('status')) {
             $query->where('STATUS', $request->input('status'));
         }
-
         if ($request->filled('project')) {
             $query->where('PROJECT_NAME', $request->input('project'));
         }
 
+        $userId = $empData['emp_id'];
+
+        // Get approver tickets
+        $approverIds = [];
+        if (in_array('DEPARTMENT_HEAD', $userRoles)) {
+            $approverIds = DB::connection('masterlist')
+                ->table('employee_masterlist')
+                ->whereRaw("? IN (APPROVER1, APPROVER2, APPROVER3)", [$userId])
+                ->pluck('EMPLOYID')
+                ->toArray();
+        }
+
+        // Get tickets where user is assigned as tester
+        $testerTicketIds = DB::table('ticket_testers')
+            ->where('TESTER_ID', $userId)
+            ->whereNull('DELETED_AT')
+            ->pluck('TICKET_ID')
+            ->toArray();
+
+        // Apply role-based filters
+        $query->where(function ($q) use ($userRoles, $userId, $approverIds, $testerTicketIds) {
+            // Programmers or MIS supervisors: only new tickets
+            if (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles)) {
+                $q->orWhere('STATUS', 1);
+            }
+
+            // Department head: only tickets of employees they approve
+            if (in_array('DEPARTMENT_HEAD', $userRoles) && !empty($approverIds)) {
+                $q->orWhereIn('EMPLOYID', $approverIds);
+            }
+
+            // OD sees all tickets
+            if (in_array('OD', $userRoles)) {
+                $q->orWhereRaw('1 = 1'); // no filter
+            }
+
+            if (in_array('MIS_SUPERVISOR', $userRoles)) {
+                $q->orWhere('STATUS', 3);
+            }
+
+            // Always include requestor's own tickets
+            $q->orWhere('EMPLOYID', $userId);
+
+            // Include tickets assigned to user as programmer
+            $q->orWhere('ASSIGNED_TO', $userId);
+
+            // Include tickets where user is assigned as tester
+            if (!empty($testerTicketIds)) {
+                $q->orWhereIn('tickets.ID', $testerTicketIds);
+            }
+        });
+
+        // Global search
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('TICKET_ID', 'like', "%{$search}%")
@@ -306,26 +482,43 @@ class TicketingController extends Controller
             });
         }
 
+        // Sorting
         $orderBy = $columns[$orderCol]['data'] ?? 'CREATED_AT';
         $query->orderBy($orderBy, $orderDir);
 
         $total = $query->count();
         $tickets = $query->offset($start)->limit($length)->get();
 
+        // Map actions
         $data = [];
         foreach ($tickets as $ticket) {
             $actions = [];
+
+            // Check if user is a tester for this ticket
+            $isTester = in_array($ticket->ID, $testerTicketIds);
+
             if ($this->canPerformAction($ticket, 'ASSESS', $empData, $userRoles)) {
                 $actions[] = 'Assess';
             }
             if ($this->canPerformAction($ticket, 'DH_APPROVE', $empData, $userRoles)) {
-                $actions[] = 'DH Approve';
+                $actions[] = 'Approve';
             }
             if ($this->canPerformAction($ticket, 'OD_APPROVE', $empData, $userRoles)) {
-                $actions[] = 'OD Approve';
+                $actions[] = 'Approve';
             }
             if ($this->canPerformAction($ticket, 'ASSIGN', $empData, $userRoles)) {
                 $actions[] = 'Assign';
+            }
+            if ($this->canPerformAction($ticket, 'RESOLVE', $empData, $userRoles)) {
+                $actions[] = 'Resolve';
+            }
+            if ($this->canPerformAction($ticket, 'CLOSE', $empData, $userRoles)) {
+                $actions[] = 'Close';
+            }
+
+            // Add test action for testers
+            if ($isTester && in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_RESOLVED])) {
+                $actions[] = 'Test';
             }
 
             $data[] = [
@@ -336,9 +529,10 @@ class TicketingController extends Controller
                 'status' => $this->getStatusLabel($ticket->STATUS),
                 'created_at' => $ticket->CREATED_AT,
                 'actions' => $actions,
+                'is_tester' => $isTester, // Flag to indicate if user is a tester
             ];
         }
-        // dd($data);
+
         return Inertia::render('Ticketing/Table', [
             'tickets' => $data,
             'recordsTotal' => $total,
@@ -346,6 +540,159 @@ class TicketingController extends Controller
             'draw' => intval($request->input('draw')),
             'filters' => $request->all(),
         ]);
+    }
+    /**
+     * Get employee names from masterlist database
+     * Returns array with EMPLOYID as key and EMPNAME as value
+     */
+    private function getEmployeeNames(array $employeeIds)
+    {
+        // Remove duplicates, nulls, and non-numeric values
+        $employeeIds = array_filter(array_unique($employeeIds), fn($id) => is_numeric($id));
+
+        if (empty($employeeIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+
+        $employees = DB::connection('masterlist')->select(
+            "SELECT EMPLOYID, EMPNAME 
+         FROM employee_masterlist 
+         WHERE EMPLOYID IN ($placeholders)",
+            array_values($employeeIds) // ensure sequential numeric keys
+        );
+
+        $result = [];
+        foreach ($employees as $emp) {
+            $result[$emp->EMPLOYID] = $emp->EMPNAME;
+        }
+
+        return $result;
+    }
+
+
+    /**
+     * Enrich data with employee names from masterlist
+     * Adds employee_name field to each item
+     */
+    private function enrichWithEmployeeNames(array $data, string $employeeIdField = 'EMPLOYID')
+    {
+        if (empty($data)) {
+            return $data;
+        }
+
+        // Extract all employee IDs
+        $employeeIds = array_column($data, $employeeIdField);
+
+        // Get employee names
+        $employeeNames = $this->getEmployeeNames($employeeIds);
+
+        // Add employee names to data
+        foreach ($data as $item) {
+            $empId = $item->{$employeeIdField};
+            $item->employee_name = $employeeNames[$empId] ?? 'Unknown';
+            $item->employee_display = ($employeeNames[$empId] ?? 'Unknown') . " ($empId)";
+        }
+
+        return $data;
+    }
+
+    /**
+     * Get formatted employee display name
+     */
+    private function getEmployeeDisplayName($employeeId)
+    {
+        if (empty($employeeId)) {
+            return 'Unknown';
+        }
+
+        $employee = DB::connection('masterlist')->selectOne("
+        SELECT EMPNAME 
+        FROM employee_masterlist 
+        WHERE EMPLOYID = ?
+    ", [$employeeId]);
+
+        if ($employee) {
+            return $employee->EMPNAME . " ($employeeId)";
+        }
+
+        return "Unknown ($employeeId)";
+    }
+
+    /**
+     * Get multiple assigned employee names from comma-separated string
+     */
+    private function getAssignedEmployeeNames($assignedToString)
+    {
+        if (empty($assignedToString)) {
+            return [];
+        }
+
+        $employeeIds = $this->extractMultipleEmployeeIds($assignedToString);
+        $employeeNames = $this->getEmployeeNames($employeeIds);
+
+        $result = [];
+        foreach ($employeeIds as $id) {
+            $result[] = [
+                'id' => $id,
+                'name' => $employeeNames[$id] ?? 'Unknown',
+                'display' => ($employeeNames[$id] ?? 'Unknown') . " ($id)"
+            ];
+        }
+
+        return $result;
+    }
+    /**
+     * Get list of programmers for assignment dropdown
+     */
+    private function getProgrammerOptions()
+    {
+        // Get all MIS employees who are programmers
+        $programmers = DB::connection('masterlist')->select("
+        SELECT 
+            EMPLOYID as value,
+            CONCAT(EMPLOYID, ' - ', EMPNAME) as label,
+            EMPNAME as name,
+            JOB_TITLE
+        FROM employee_masterlist 
+        WHERE ACCSTATUS = 1 
+        AND EMPLOYID != 0
+        AND UPPER(DEPARTMENT) = 'MIS'
+        AND (
+            UPPER(JOB_TITLE) LIKE '%PROGRAMMER%'
+            OR UPPER(JOB_TITLE) LIKE '%DEVELOPER%'
+        )
+        ORDER BY EMPNAME ASC
+    ");
+
+        return $programmers;
+    }
+
+    /**
+     * Check if employee is a programmer
+     */
+    private function isProgrammer($employeeId)
+    {
+        $employee = DB::connection('masterlist')->selectOne("
+        SELECT JOB_TITLE, DEPARTMENT
+        FROM employee_masterlist 
+        WHERE EMPLOYID = ? 
+        AND ACCSTATUS = 1
+    ", [$employeeId]);
+
+        if (!$employee) {
+            return false;
+        }
+
+        $dept = strtoupper($employee->DEPARTMENT);
+        $job_Title = strtoupper($employee->JOB_TITLE);
+
+        return $dept === 'MIS' && (
+            strpos($job_Title, 'PROGRAMMER') !== false ||
+            strpos($job_Title, 'DEVELOPER') !== false ||
+            strpos($job_Title, 'MIS') !== false
+        );
     }
     /**
      * Determine required workflow path based on request type
@@ -578,8 +925,697 @@ class TicketingController extends Controller
         return $labels[$status] ?? 'Unknown';
     }
 
+    // Add these methods to your TicketingController
+
     /**
-     * Determine if user can perform action on ticket
+     * Handle ticket assignment (by MIS Supervisor)
+     */
+    public function assignTicket(Request $request, $ticketId)
+    {
+        $validated = $request->validate([
+            'assigned_to' => 'required|array',
+            'assigned_to.*' => 'required|string|max:20',
+            'remarks' => 'nullable|string|max:1000',
+        ]);
+
+        $ticket = DB::selectOne('
+        SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
+        FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        $workflowPath = $this->getRequiredWorkflowPath($ticket->TYPE_OF_REQUEST);
+
+        // Check if ticket is in correct status for assignment
+        if (!$workflowPath['can_direct_assign'] && $ticket->STATUS !== self::STATUS_APPROVED) {
+            return response()->json([
+                'error' => 'Ticket must be approved before assignment'
+            ], 400);
+        }
+
+        $currentUser = session('emp_data');
+        $assignedToString = implode(',', $validated['assigned_to']);
+
+        DB::beginTransaction();
+        try {
+            // Update ticket
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update([
+                    'ASSIGNED_TO' => $assignedToString,
+                    'STATUS' => self::STATUS_IN_PROGRESS, // Auto-acknowledge
+                    'UPDATED_AT' => now(),
+                ]);
+
+            // Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_ASSIGNED,
+                $currentUser['emp_id'],
+                $validated['remarks'] ?? 'Ticket assigned to programmer(s)',
+                ['assigned_to' => $validated['assigned_to']]
+            );
+
+            // Log ticket history
+            $this->logTicketHistory(
+                $ticket->ID,
+                'ASSIGNMENT',
+                'ASSIGNED_TO',
+                null,
+                $assignedToString,
+                $currentUser['emp_id']
+            );
+
+            // Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'ASSIGNMENT',
+                $validated['remarks'] ?? 'Ticket assigned and auto-acknowledged',
+                $ticket->STATUS,
+                self::STATUS_IN_PROGRESS,
+                null,
+                $assignedToString,
+                false
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket assigned successfully. Status changed to In Progress.',
+                'next_step' => 'Waiting for programmer to complete and resolve'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Assignment failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle ticket resolution (by assigned programmer)
+     */
+    public function resolveTicket(Request $request, $ticketId)
+    {
+        $validated = $request->validate([
+            'remarks' => 'required|string|min:10|max:1000',
+            'attachments' => 'nullable|array|max:10',
+            'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',
+        ]);
+
+        $ticket = DB::selectOne('
+        SELECT ID, TICKET_ID, STATUS, ASSIGNED_TO, EMPLOYID 
+        FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        if ($ticket->STATUS !== self::STATUS_IN_PROGRESS) {
+            return response()->json([
+                'error' => 'Only tickets in progress can be resolved'
+            ], 400);
+        }
+
+        $currentUser = session('emp_data');
+        $assignedIds = $this->extractMultipleEmployeeIds($ticket->ASSIGNED_TO ?? '');
+
+        // Verify user is assigned to this ticket
+        if (!in_array($currentUser['emp_id'], $assignedIds)) {
+            return response()->json([
+                'error' => 'You are not assigned to this ticket'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update ticket status to RESOLVED
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update([
+                    'STATUS' => self::STATUS_RESOLVED,
+                    'RESOLVED_AT' => now(),
+                    'UPDATED_AT' => now(),
+                ]);
+
+            // Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_RESOLVED,
+                $currentUser['emp_id'],
+                $validated['remarks']
+            );
+
+            // Handle attachments if provided
+            if ($request->hasFile('attachments')) {
+                $this->handleAttachments(
+                    $request->file('attachments'),
+                    $ticketId,
+                    $currentUser['emp_id']
+                );
+            }
+
+            // Log ticket history
+            $this->logTicketHistory(
+                $ticket->ID,
+                'RESOLUTION',
+                'STATUS',
+                $this->getStatusLabel(self::STATUS_IN_PROGRESS),
+                $this->getStatusLabel(self::STATUS_RESOLVED),
+                $currentUser['emp_id']
+            );
+
+            // Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'RESOLUTION',
+                $validated['remarks'],
+                self::STATUS_IN_PROGRESS,
+                self::STATUS_RESOLVED,
+                null,
+                null,
+                false
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket resolved successfully',
+                'next_step' => 'Waiting for requestor to verify and close the ticket'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Resolution failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle ticket closure (by original requestor)
+     */
+    public function closeTicket(Request $request, $ticketId)
+    {
+        $validated = $request->validate([
+            'remarks' => 'required|string|min:10|max:1000',
+            'rating' => 'nullable|integer|min:1|max:5',
+        ]);
+
+        $ticket = DB::selectOne('
+        SELECT ID, TICKET_ID, STATUS, EMPLOYID 
+        FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        if ($ticket->STATUS !== self::STATUS_RESOLVED) {
+            return response()->json([
+                'error' => 'Only resolved tickets can be closed'
+            ], 400);
+        }
+
+        $currentUser = session('emp_data');
+
+        // Verify user is the original requestor
+        if ($ticket->EMPLOYID !== $currentUser['emp_id']) {
+            return response()->json([
+                'error' => 'Only the original requestor can close this ticket'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update ticket status to CLOSED
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update([
+                    'STATUS' => self::STATUS_CLOSED,
+                    'CLOSED_AT' => now(),
+                    'RATING' => $validated['rating'] ?? null,
+                    'UPDATED_AT' => now(),
+                ]);
+
+            // Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_CLOSED,
+                $currentUser['emp_id'],
+                $validated['remarks'],
+                ['rating' => $validated['rating'] ?? null]
+            );
+
+            // Log ticket history
+            $this->logTicketHistory(
+                $ticket->ID,
+                'CLOSURE',
+                'STATUS',
+                $this->getStatusLabel(self::STATUS_RESOLVED),
+                $this->getStatusLabel(self::STATUS_CLOSED),
+                $currentUser['emp_id']
+            );
+
+            // Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'CLOSURE',
+                $validated['remarks'],
+                self::STATUS_RESOLVED,
+                self::STATUS_CLOSED,
+                null,
+                null,
+                false
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket closed successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Closure failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle ticket return (send back to requestor for clarification)
+     */
+    public function returnTicket(Request $request, $ticketId)
+    {
+        $validated = $request->validate([
+            'remarks' => 'required|string|min:10|max:1000',
+        ]);
+
+        $ticket = DB::selectOne('
+        SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
+        FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        // Can only return tickets that are in NEW or TRIAGED status
+        if (!in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_TRIAGED])) {
+            return response()->json([
+                'error' => 'Ticket cannot be returned in current status'
+            ], 400);
+        }
+
+        $currentUser = session('emp_data');
+
+        DB::beginTransaction();
+        try {
+            $oldStatus = $ticket->STATUS;
+
+            // Update ticket - keep status but mark as returned
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update([
+                    'STATUS' => self::STATUS_NEW, // Reset to NEW
+                    'UPDATED_AT' => now(),
+                ]);
+
+            // Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_RETURNED,
+                $currentUser['emp_id'],
+                $validated['remarks']
+            );
+
+            // Log ticket history
+            $this->logTicketHistory(
+                $ticket->ID,
+                'RETURN',
+                'STATUS',
+                $this->getStatusLabel($oldStatus),
+                $this->getStatusLabel(self::STATUS_NEW),
+                $currentUser['emp_id']
+            );
+
+            // Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'RETURN',
+                $validated['remarks'],
+                $oldStatus,
+                self::STATUS_NEW,
+                null,
+                null,
+                false
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket returned to requestor for clarification',
+                'next_step' => 'Waiting for requestor to update ticket details'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Return failed: ' . $e->getMessage()], 500);
+        }
+    }
+    /**
+     * Get tester status for a ticket
+     */
+    private function getTesterStatus($ticketId, $testerId)
+    {
+        $tester = DB::selectOne('
+        SELECT STATUS, TESTED_AT, REMARKS 
+        FROM ticket_testers 
+        WHERE TICKET_ID = ? 
+        AND TESTER_ID = ? 
+        AND DELETED_AT IS NULL
+    ', [$ticketId, $testerId]);
+
+        return $tester;
+    }
+
+    /**
+     * Get all testers for a ticket
+     */
+    private function getTicketTesters($ticketId)
+    {
+        $testers = DB::select('
+        SELECT 
+            tt.*
+        FROM ticket_testers tt
+        WHERE tt.TICKET_ID = ?
+        AND tt.DELETED_AT IS NULL
+        ORDER BY tt.ASSIGNED_AT DESC
+    ', [$ticketId]);
+
+        // Enrich with employee names
+        $testers = $this->enrichWithEmployeeNames($testers, 'TESTER_ID');
+
+        foreach ($testers as $tester) {
+            $tester->tester_name = $tester->employee_display;
+        }
+
+        return $testers;
+    }
+
+    /**
+     * Submit test results (by tester)
+     */
+    public function submitTestResult(Request $request, $ticketId)
+    {
+        $validated = $request->validate([
+            'test_status' => 'required|in:PASSED,FAILED',
+            'remarks' => 'required|string|min:10|max:1000',
+            'attachments' => 'nullable|array|max:10',
+            'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',
+        ]);
+
+        $ticket = DB::selectOne('
+        SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
+        FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        // Verify ticket is in testable status
+        if (!in_array($ticket->STATUS, [self::STATUS_IN_PROGRESS, self::STATUS_RESOLVED])) {
+            return response()->json([
+                'error' => 'Ticket is not in a testable status'
+            ], 400);
+        }
+
+        $currentUser = session('emp_data');
+        $userId = $currentUser['emp_id'];
+
+        // Verify user is assigned as tester
+        $tester = DB::selectOne('
+        SELECT ID, STATUS 
+        FROM ticket_testers 
+        WHERE TICKET_ID = ? 
+        AND TESTER_ID = ? 
+        AND DELETED_AT IS NULL
+    ', [$ticket->ID, $userId]);
+
+        if (!$tester) {
+            return response()->json([
+                'error' => 'You are not assigned as a tester for this ticket'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update tester status
+            DB::table('ticket_testers')
+                ->where('ID', $tester->ID)
+                ->update([
+                    'STATUS' => $validated['test_status'],
+                    'TESTED_AT' => now(),
+                    'REMARKS' => $validated['remarks'],
+                    'UPDATED_AT' => now(),
+                ]);
+
+            // Handle attachments if provided
+            if ($request->hasFile('attachments')) {
+                $this->handleAttachments(
+                    $request->file('attachments'),
+                    $ticketId,
+                    $userId
+                );
+            }
+
+            // Check if all testers have completed testing
+            $allTesters = DB::select('
+            SELECT STATUS 
+            FROM ticket_testers 
+            WHERE TICKET_ID = ? 
+            AND DELETED_AT IS NULL
+        ', [$ticket->ID]);
+
+            $allCompleted = true;
+            $allPassed = true;
+
+            foreach ($allTesters as $t) {
+                if ($t->STATUS === 'PENDING') {
+                    $allCompleted = false;
+                    break;
+                }
+                if ($t->STATUS === 'FAILED') {
+                    $allPassed = false;
+                }
+            }
+
+            // Insert remark for test result
+            $remarkText = "Test result: {$validated['test_status']} - {$validated['remarks']}";
+
+            $this->insertRemark(
+                $ticket->ID,
+                $userId,
+                'TESTING',
+                $remarkText,
+                $ticket->STATUS,
+                $ticket->STATUS,
+                null,
+                null,
+                false
+            );
+
+            // Log ticket history
+            $this->logTicketHistory(
+                $ticket->ID,
+                'TEST_RESULT',
+                'TESTER_STATUS',
+                'PENDING',
+                $validated['test_status'],
+                $userId
+            );
+
+            $message = "Test result submitted successfully";
+            $nextStep = null;
+
+            if ($allCompleted) {
+                if ($allPassed) {
+                    $message .= ". All tests passed!";
+                    $nextStep = "Ready for resolution";
+                } else {
+                    $message .= ". Some tests failed - assigned programmer needs to address issues";
+                    $nextStep = "Waiting for programmer to fix failed tests";
+                }
+            } else {
+                $nextStep = "Waiting for other testers to complete testing";
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'test_status' => $validated['test_status'],
+                'all_completed' => $allCompleted,
+                'all_passed' => $allPassed,
+                'next_step' => $nextStep
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'error' => 'Failed to submit test result: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update viewTicket method to include tester information
+     */
+    public function viewTicketWithTesters($hash): Response
+    {
+        $decodedData = base64_decode($hash);
+        $parts = explode(':', $decodedData);
+
+        if (count($parts) === 2) {
+            [$ticketId, $action] = $parts;
+        } elseif (count($parts) === 3) {
+            [$ticketId, $action, $userAccountType] = $parts;
+        } else {
+            abort(400, 'Invalid hash format');
+        }
+
+        $ticket = DB::selectOne('
+        SELECT * FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            abort(404, 'Ticket not found');
+        }
+
+        $attachments = DB::select('
+        SELECT * FROM ticket_attachments 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+        ORDER BY UPLOADED_AT DESC
+    ', [$ticket->ID]);
+
+        // Get current user data
+        $empData = session('emp_data');
+        $userRoles = $this->getUserAccountType($empData);
+
+        // Get tester information if applicable
+        $ticketTesters = [];
+        $userTesterStatus = null;
+
+        if (in_array($ticket->TYPE_OF_REQUEST, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])) {
+            $ticketTesters = $this->getTicketTesters($ticket->ID);
+            $userTesterStatus = $this->getTesterStatus($ticket->ID, $empData['emp_id']);
+        }
+
+        // Map request type constants to labels
+        $requestTypes = [
+            1 => 'New System',
+            2 => 'Modification',
+            3 => 'Enhancement',
+            4 => 'Adjustment',
+            5 => 'Testing',
+            6 => 'Parallel Run',
+        ];
+
+        // Map status constants
+        $statusTypes = [
+            1 => 'New',
+            2 => 'Triaged',
+            3 => 'Approved',
+            4 => 'In Progress',
+            5 => 'Resolved',
+            6 => 'Closed',
+            7 => 'Rejected',
+            8 => 'On Hold',
+        ];
+
+        // Determine available actions for current user
+        $availableActions = [];
+        $possibleActions = ['ASSESS', 'RETURN', 'DH_APPROVE', 'OD_APPROVE', 'ASSIGN', 'RESOLVE', 'CLOSE', 'TEST'];
+
+        foreach ($possibleActions as $possibleAction) {
+            if ($this->canPerformAction($ticket, $possibleAction, $empData, $userRoles)) {
+                $availableActions[] = $possibleAction;
+            }
+        }
+
+        // Get workflow stage information
+        $workflowStage = $this->getCurrentWorkflowStage($ticket->ID);
+
+        // Get ticket history
+        $ticketHistory = DB::select('
+        SELECT tw.*
+        FROM ticket_workflow tw
+        WHERE tw.TICKET_ID = ?
+        ORDER BY tw.ACTION_AT DESC
+    ', [$ticket->ID]);
+
+        $ticketHistory = $this->enrichWithEmployeeNames($ticketHistory, 'ACTION_BY');
+        foreach ($ticketHistory as $history) {
+            $history->action_by_name = $history->employee_display;
+        }
+
+        // Get remarks history
+        $remarksHistory = DB::select('
+        SELECT rh.*
+        FROM remarks_history rh
+        WHERE rh.TICKET_ID = ?
+        ORDER BY rh.CREATED_AT DESC
+    ', [$ticket->ID]);
+
+        $remarksHistory = $this->enrichWithEmployeeNames($remarksHistory, 'CREATED_BY');
+        foreach ($remarksHistory as $remark) {
+            $remark->created_by_name = $remark->employee_display;
+        }
+
+        // Get assigned employee names
+        $assignedEmployees = [];
+        if (!empty($ticket->ASSIGNED_TO)) {
+            $assignedEmployees = $this->getAssignedEmployeeNames($ticket->ASSIGNED_TO);
+        }
+
+        // Get programmer options for assignment action
+        $programmerOptions = [];
+        if (in_array('ASSIGN', $availableActions)) {
+            $programmerOptions = $this->getProgrammerOptions();
+        }
+
+        return Inertia::render('Ticketing/ViewDetails', [
+            'ticket' => $ticket,
+            'action' => $action,
+            'attachments' => $attachments,
+            'requestTypes' => $requestTypes,
+            'statusTypes' => $statusTypes,
+            'availableActions' => $availableActions,
+            'workflowStage' => $workflowStage,
+            'ticketHistory' => $ticketHistory,
+            'remarksHistory' => $remarksHistory,
+            'assignedEmployees' => $assignedEmployees,
+            'programmerOptions' => $programmerOptions,
+            'userRoles' => $userRoles,
+            'ticketTesters' => $ticketTesters,
+            'userTesterStatus' => $userTesterStatus,
+        ]);
+    }
+
+
+    /**
+     * Update canPerformAction to include new actions
      */
     private function canPerformAction($ticket, $action, $currentUser, $userRoles)
     {
@@ -587,23 +1623,64 @@ class TicketingController extends Controller
         $userId = $currentUser['emp_id'];
         $requestType = $ticket->TYPE_OF_REQUEST;
         $workflowPath = $this->getRequiredWorkflowPath($requestType);
-        // dd($action, $status, $userRoles, $workflowPath);
+        // Requestor cannot perform actions on their own tickets
         if ($ticket->EMPLOYID == $userId) {
+            // For testing or parallel run, block all actions
+            if (in_array($ticket->TYPE_OF_REQUEST, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])) {
+                return false;
+            }
+
+            // For other request types, allow only CLOSE
+            if ($action !== 'CLOSE') {
+                return false;
+            }
+        }
+
+
+        // For Testing/Parallel Run
+        if ($workflowPath['can_direct_assign']) {
+            if ($action === 'TEST') {
+                // Tester can test if assigned and status is NEW or IN_PROGRESS
+                $isTester = DB::table('ticket_testers')
+                    ->where('TICKET_ID', $ticket->ID)
+                    ->where('TESTER_ID', $userId)
+                    ->where('STATUS', 'PENDING')
+                    ->whereNull('DELETED_AT')
+                    ->exists();
+                return $isTester && in_array($status, [self::STATUS_NEW, self::STATUS_IN_PROGRESS]);
+            }
+
+            if ($action === 'CLOSE') {
+                // Requestor can close if all testers passed
+                $allPassed = DB::table('ticket_testers')
+                    ->where('TICKET_ID', $ticket->ID)
+                    ->where('STATUS', 'FAILED')
+                    ->doesntExist();
+                return $ticket->EMPLOYID === $userId && $allPassed;
+            }
+            if ($action === 'RETURN') {
+                // Requestor can return for retesting if any failed
+                $anyFailed = DB::table('ticket_testers')
+                    ->where('TICKET_ID', $ticket->ID)
+                    ->where('STATUS', 'FAILED')
+                    ->exists();
+                return $ticket->EMPLOYID === $userId && $anyFailed;
+            }
+            // No assignment or programmer actions
             return false;
         }
         switch ($action) {
             case 'ASSESS':
-                if (!$workflowPath['requires_assessment']) {
-                    return false;
-                }
+                if (!$workflowPath['requires_assessment']) return false;
+                return in_array($status, [self::STATUS_NEW, self::STATUS_TRIAGED]) &&
+                    (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles));
+
+            case 'RETURN':
                 return in_array($status, [self::STATUS_NEW, self::STATUS_TRIAGED]) &&
                     (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles));
 
             case 'DH_APPROVE':
-                if (!$workflowPath['requires_dh_approval']) {
-                    return false;
-                }
-
+                if (!$workflowPath['requires_dh_approval']) return false;
                 if ($status !== self::STATUS_TRIAGED) return false;
                 if (!in_array('DEPARTMENT_HEAD', $userRoles)) return false;
 
@@ -612,7 +1689,6 @@ class TicketingController extends Controller
                         ->where('TICKET_ID', $ticket->ID)
                         ->where('ACTION_TYPE', self::WORKFLOW_ASSESSED)
                         ->exists();
-
                     if (!$hasAssessment) return false;
                 }
 
@@ -620,14 +1696,10 @@ class TicketingController extends Controller
                     ->where('TICKET_ID', $ticket->ID)
                     ->where('ACTION_TYPE', self::WORKFLOW_DH_APPROVED)
                     ->exists();
-
                 return !$alreadyApproved;
 
             case 'OD_APPROVE':
-                if (!$workflowPath['requires_od_approval']) {
-                    return false;
-                }
-
+                if (!$workflowPath['requires_od_approval']) return false;
                 if ($status !== self::STATUS_TRIAGED) return false;
                 if (!in_array('OD', $userRoles)) return false;
 
@@ -635,14 +1707,12 @@ class TicketingController extends Controller
                     ->where('TICKET_ID', $ticket->ID)
                     ->where('ACTION_TYPE', self::WORKFLOW_DH_APPROVED)
                     ->exists();
-
                 if (!$hasDHApproval) return false;
 
                 $alreadyApproved = DB::table('ticket_workflow')
                     ->where('TICKET_ID', $ticket->ID)
                     ->where('ACTION_TYPE', self::WORKFLOW_OD_APPROVED)
                     ->exists();
-
                 return !$alreadyApproved;
 
             case 'ASSIGN':
@@ -653,22 +1723,16 @@ class TicketingController extends Controller
 
                 if ($status !== self::STATUS_APPROVED) return false;
                 if (!in_array('MIS_SUPERVISOR', $userRoles)) return false;
-
                 return $this->areApprovalsComplete($ticket->ID, $requestType);
 
-            case 'ACKNOWLEDGE':
-                if ($status !== self::STATUS_APPROVED) return false;
-                $assignedIds = $this->extractMultipleEmployeeIds($ticket->ASSIGNED_TO ?? '');
-                return in_array($userId, $assignedIds);
-
             case 'RESOLVE':
+            case 'IN_PROGRESS':
                 if ($status !== self::STATUS_IN_PROGRESS) return false;
                 $assignedIds = $this->extractMultipleEmployeeIds($ticket->ASSIGNED_TO ?? '');
                 return in_array($userId, $assignedIds);
 
             case 'CLOSE':
-                return $status === self::STATUS_RESOLVED &&
-                    $ticket->EMPLOYEE_ID === $userId;
+                return $status === self::STATUS_RESOLVED && $ticket->EMPLOYID === $userId;
 
             default:
                 return false;
@@ -704,7 +1768,7 @@ class TicketingController extends Controller
             ], 400);
         }
 
-        $currentUser = session('employee');
+        $currentUser = session('emp_data');
 
         $this->logWorkflowAction(
             $ticket->ID,
@@ -760,7 +1824,7 @@ class TicketingController extends Controller
             ], 400);
         }
 
-        $currentUser = session('employee');
+        $currentUser = session('emp_data');
         $assignedTo = $request->input('assigned_to');
 
         DB::table('tickets')
@@ -828,7 +1892,7 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Ticket not found'], 404);
         }
 
-        $currentUser = session('employee');
+        $currentUser = session('emp_data');
 
         $this->logWorkflowAction(
             $ticket->ID,
@@ -878,7 +1942,7 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Ticket not found'], 404);
         }
 
-        $currentUser = session('employee');
+        $currentUser = session('emp_data');
 
         $this->logWorkflowAction(
             $ticket->ID,
@@ -1099,12 +2163,12 @@ class TicketingController extends Controller
     private function isAssessedByProgrammer($empData)
     {
         $dept = strtoupper($empData['emp_dept']);
-        $jobTitle = strtolower($empData['emp_jobtitle']);
+        $job_Title = strtolower($empData['emp_jobtitle']);
 
         return $dept === 'MIS' &&
             (
-                strpos($jobTitle, 'programmer') !== false ||
-                (strpos($jobTitle, 'mis') !== false && strpos($jobTitle, 'supervisor') !== false)
+                strpos($job_Title, 'programmer') !== false ||
+                (strpos($job_Title, 'mis') !== false && strpos($job_Title, 'supervisor') !== false)
             );
     }
 
