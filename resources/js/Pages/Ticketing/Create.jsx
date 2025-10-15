@@ -1,59 +1,101 @@
-import React, { useState, useEffect } from "react";
-import { Form, Select, Input, Button, Alert } from "antd";
+// Create.jsx
+import React, { useState } from "react";
+import { Form, Select, Input, Button, Alert, message } from "antd";
+import { Ticket } from "lucide-react";
+import { useForm } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import { usePage } from "@inertiajs/react";
+import AttachmentUpload from "./AttachmentUpload";
+import { useTicketForm } from "./../../Hooks/useTicketForm";
 
 const { Option } = Select;
 
 const Create = () => {
-    const selectStyle = { height: "2.5rem" };
+    const selectStyle = { height: "4.5rem" };
     const selectDropdownStyle = { borderRadius: "0.5rem" };
 
     const {
         emp_data,
         requestTypes = [],
         ticketOptions = [],
-        ticketProjects = {}, // {ticketId: projectName}
+        ticketProjects = {},
         projectOptions = [],
         employeeOptions = [],
     } = usePage().props;
-    console.log(usePage().props);
 
-    const [requestType, setRequestType] = useState(null);
-    const [selectedProject, setSelectedProject] = useState(null);
-    const [selectedParentTicket, setSelectedParentTicket] = useState(null);
-    const [filteredParentTickets, setFilteredParentTickets] =
-        useState(ticketOptions);
+    // Use Inertia's useForm hook
+    const { data, setData, post, processing, errors, reset } = useForm({
+        request_type: null,
+        project: null,
+        project_name: null,
+        parent_ticket: null,
+        testers: [],
+        details: "",
+        attachments: [],
+    });
 
-    const isNewSystem = requestType === 1;
-    const isTesting = requestType === 5 || requestType === 6; // REQUEST_TESTING
+    // Custom hook for form logic
+    const {
+        filteredParentTickets,
+        isNewSystem,
+        isTesting,
+        handleRequestTypeChange,
+        handleProjectChange,
+        handleParentTicketChange,
+    } = useTicketForm({
+        requestType: data.request_type,
+        selectedProject: data.project,
+        selectedParentTicket: data.parent_ticket,
+        ticketOptions,
+        ticketProjects,
+        onProjectChange: (value) => setData("project", value),
+        onParentTicketChange: (value) => setData("parent_ticket", value),
+    });
 
-    // Update filtered parent tickets if project changes
-    useEffect(() => {
-        if (selectedProject) {
-            setFilteredParentTickets(
-                ticketOptions.filter(
-                    (t) => ticketProjects[t.value] === selectedProject
-                )
-            );
-            // If parent ticket doesn't belong to selected project, clear it
-            if (
-                selectedParentTicket &&
-                ticketProjects[selectedParentTicket] !== selectedProject
-            ) {
-                setSelectedParentTicket(null);
-            }
+    const handleSubmit = (e) => {
+        // Create FormData for file upload
+        const formData = new FormData();
+
+        // Append all form fields
+        formData.append("request_type", data.request_type);
+
+        if (isNewSystem) {
+            formData.append("project_name", data.project_name);
         } else {
-            setFilteredParentTickets(ticketOptions);
+            formData.append("project", data.project);
+            if (data.parent_ticket) {
+                formData.append("parent_ticket", data.parent_ticket);
+            }
         }
-    }, [selectedProject, ticketOptions, ticketProjects, selectedParentTicket]);
 
-    // Auto-fill project when parent ticket changes
-    useEffect(() => {
-        if (selectedParentTicket) {
-            setSelectedProject(ticketProjects[selectedParentTicket]);
+        if (isTesting && data.testers.length > 0) {
+            data.testers.forEach((tester, index) => {
+                formData.append(`testers[${index}]`, tester);
+            });
         }
-    }, [selectedParentTicket, ticketProjects]);
+
+        formData.append("details", data.details);
+
+        // Append attachments
+        data.attachments.forEach((file, index) => {
+            if (file instanceof File) {
+                formData.append(`attachments[${index}]`, file);
+            }
+        });
+        // Submit using Inertia
+        post(route("tickets.store"), {
+            data: formData,
+            forceFormData: true,
+            onSuccess: () => {
+                message.success("Ticket created successfully!");
+                reset();
+            },
+            onError: (errors) => {
+                message.error("Please check the form for errors.");
+                console.error(errors);
+            },
+        });
+    };
 
     return (
         <AuthenticatedLayout>
@@ -101,17 +143,34 @@ const Create = () => {
                             </div>
                         </div>
 
-                        <Form layout="vertical" className="space-y-4">
+                        <Form
+                            layout="vertical"
+                            onFinish={handleSubmit}
+                            className="space-y-4"
+                        >
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 {/* Request Type */}
-                                <Form.Item label="Type of Request" required>
+                                <Form.Item
+                                    label="Type of Request"
+                                    required
+                                    validateStatus={
+                                        errors.request_type ? "error" : ""
+                                    }
+                                    help={errors.request_type}
+                                >
                                     <Select
                                         placeholder="Choose request type"
-                                        value={requestType}
-                                        onChange={setRequestType}
-                                        style={selectStyle}
-                                        dropdownStyle={selectDropdownStyle}
-                                        className="rounded-lg border border-base-300 text-sm"
+                                        value={data.request_type}
+                                        onChange={(value) => {
+                                            setData("request_type", value);
+                                            handleRequestTypeChange(value);
+                                        }}
+                                        styles={{
+                                            popup: {
+                                                root: selectDropdownStyle,
+                                            },
+                                        }}
+                                        className="w-full rounded-lg text-sm h-10 "
                                         showSearch
                                         optionFilterProp="children"
                                     >
@@ -132,26 +191,48 @@ const Create = () => {
                                         label="Project Name"
                                         required
                                         className="col-span-1 md:col-span-2"
+                                        validateStatus={
+                                            errors.project_name ? "error" : ""
+                                        }
+                                        help={errors.project_name}
                                     >
                                         <Input
                                             placeholder="Enter project name"
+                                            value={data.project_name}
+                                            onChange={(e) =>
+                                                setData(
+                                                    "project_name",
+                                                    e.target.value
+                                                )
+                                            }
                                             className="input input-bordered w-full rounded-lg text-sm h-10"
                                         />
                                     </Form.Item>
                                 ) : (
                                     <>
-                                        <Form.Item label="Project" required>
+                                        <Form.Item
+                                            label="Project"
+                                            required
+                                            validateStatus={
+                                                errors.project ? "error" : ""
+                                            }
+                                            help={errors.project}
+                                        >
                                             <Select
                                                 placeholder="Select project"
-                                                value={selectedProject}
-                                                onChange={setSelectedProject}
+                                                value={data.project}
+                                                onChange={(value) => {
+                                                    setData("project", value);
+                                                    handleProjectChange(value);
+                                                }}
                                                 showSearch
                                                 optionFilterProp="children"
-                                                style={selectStyle}
-                                                dropdownStyle={
-                                                    selectDropdownStyle
-                                                }
-                                                className="rounded-lg border border-base-300 text-sm"
+                                                styles={{
+                                                    popup: {
+                                                        root: selectDropdownStyle,
+                                                    },
+                                                }}
+                                                className="w-full rounded-lg text-sm h-10"
                                             >
                                                 {projectOptions.map((p) => (
                                                     <Option
@@ -164,21 +245,36 @@ const Create = () => {
                                             </Select>
                                         </Form.Item>
 
-                                        <Form.Item label="Parent Ticket">
+                                        <Form.Item
+                                            label="Parent Ticket"
+                                            validateStatus={
+                                                errors.parent_ticket
+                                                    ? "error"
+                                                    : ""
+                                            }
+                                            help={errors.parent_ticket}
+                                        >
                                             <Select
                                                 placeholder="Select parent ticket"
-                                                value={selectedParentTicket}
-                                                onChange={
-                                                    setSelectedParentTicket
-                                                }
+                                                value={data.parent_ticket}
+                                                onChange={(value) => {
+                                                    setData(
+                                                        "parent_ticket",
+                                                        value
+                                                    );
+                                                    handleParentTicketChange(
+                                                        value
+                                                    );
+                                                }}
                                                 allowClear
                                                 showSearch
                                                 optionFilterProp="children"
-                                                style={selectStyle}
-                                                dropdownStyle={
-                                                    selectDropdownStyle
-                                                }
-                                                className="rounded-lg border border-base-300 text-sm"
+                                                styles={{
+                                                    popup: {
+                                                        root: selectDropdownStyle,
+                                                    },
+                                                }}
+                                                className="w-full rounded-lg text-sm h-10"
                                             >
                                                 {filteredParentTickets.map(
                                                     (t) => (
@@ -198,13 +294,26 @@ const Create = () => {
 
                             {/* Assign Tester only for Testing requests */}
                             {isTesting && (
-                                <Form.Item label="Assign Tester">
+                                <Form.Item
+                                    label="Assign Tester"
+                                    validateStatus={
+                                        errors.testers ? "error" : ""
+                                    }
+                                    help={errors.testers}
+                                >
                                     <Select
                                         mode="multiple"
                                         placeholder="Select tester(s)"
-                                        style={selectStyle}
-                                        dropdownStyle={selectDropdownStyle}
-                                        className="rounded-lg border border-base-300 text-sm"
+                                        value={data.testers}
+                                        onChange={(value) =>
+                                            setData("testers", value)
+                                        }
+                                        styles={{
+                                            popup: {
+                                                root: selectDropdownStyle,
+                                            },
+                                        }}
+                                        className="w-full rounded-lg text-sm h-10"
                                         showSearch
                                         optionFilterProp="children"
                                     >
@@ -220,22 +329,48 @@ const Create = () => {
                                 </Form.Item>
                             )}
 
-                            <Form.Item label="Request Details">
+                            <Form.Item
+                                label="Request Details"
+                                validateStatus={errors.details ? "error" : ""}
+                                help={errors.details}
+                            >
                                 <textarea
                                     placeholder="Provide detailed information about your request..."
                                     rows={4}
+                                    value={data.details}
+                                    onChange={(e) =>
+                                        setData("details", e.target.value)
+                                    }
                                     className="textarea textarea-bordered w-full rounded-lg text-sm resize-y"
                                 />
                             </Form.Item>
 
+                            <Form.Item
+                                label="Attachments"
+                                validateStatus={
+                                    errors.attachments ? "error" : ""
+                                }
+                                help={errors.attachments}
+                            >
+                                <AttachmentUpload
+                                    onFilesChange={(files) =>
+                                        setData("attachments", files)
+                                    }
+                                />
+                            </Form.Item>
                             <Form.Item className="mb-0">
                                 <Button
                                     type="primary"
                                     htmlType="submit"
-                                    className="btn btn-primary w-full rounded-lg"
+                                    loading={processing}
+                                    disabled={processing}
+                                    className="btn btn-primary w-full rounded-lg flex items-center justify-center gap-2"
                                     size="large"
                                 >
-                                    Create Ticket
+                                    {!processing && <Ticket />}
+                                    {processing
+                                        ? "Creating..."
+                                        : "Create Ticket"}
                                 </Button>
                             </Form.Item>
                         </Form>

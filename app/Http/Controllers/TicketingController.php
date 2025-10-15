@@ -109,7 +109,244 @@ class TicketingController extends Controller
             'userAccountType' => $this->getUserAccountType($empData)
         ]);
     }
+    public function store(Request $request)
+    {
+        // dd($request->all());
+        // Validation
+        $validated = $request->validate([
+            'request_type' => 'required|integer|in:1,2,3,4,5,6',
+            'project' => 'required_unless:request_type,1|nullable|string|max:255',
+            'project_name' => 'required_if:request_type,1|nullable|string|max:255',
+            'parent_ticket' => 'nullable|string|exists:tickets,TICKET_ID',
+            'testers' => 'nullable|array',
+            'testers.*' => 'string|max:20',
+            'details' => 'required|string|min:10',
+            'attachments' => 'nullable|array|max:10',
+            'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',
+        ]);
 
+        DB::beginTransaction();
+
+        try {
+            $empData = session('emp_data');
+            $workflowPath = $this->getRequiredWorkflowPath($validated['request_type']);
+
+            // Determine ticket level and ID
+            $isChildTicket = !empty($validated['parent_ticket']);
+            $ticketLevel = $isChildTicket ? 'child' : 'parent';
+
+            if ($isChildTicket) {
+                $ticketId = $this->generateChildTicketId($validated['parent_ticket']);
+            } else {
+                $ticketId = $this->generateTicketNumber();
+            }
+
+            // Determine initial status based on request type
+            if ($workflowPath['can_direct_assign']) {
+                // Testing/Parallel Run: Direct to NEW (waiting for assignment)
+                $initialStatus = self::STATUS_NEW;
+            } else {
+                // Other requests: Direct to NEW (waiting for triage/assessment)
+                $initialStatus = self::STATUS_NEW;
+            }
+
+            // Determine project name
+            $projectName = null;
+            if ($validated['request_type'] == self::REQUEST_NEW_SYSTEM) {
+                // New System - use provided project name
+                $projectName = $validated['project_name'];
+            } elseif (!empty($validated['project'])) {
+                // Existing project - use selected project
+                $projectName = $validated['project'];
+            } elseif (!empty($validated['parent_ticket'])) {
+                // Child ticket - inherit from parent
+                $parentTicket = DB::selectOne('
+                SELECT PROJECT_NAME 
+                FROM tickets 
+                WHERE TICKET_ID = ? 
+                AND DELETED_AT IS NULL
+            ', [$validated['parent_ticket']]);
+
+                if ($parentTicket) {
+                    $projectName = $parentTicket->PROJECT_NAME;
+                }
+            }
+
+            // Insert into tickets table
+            $ticketDbId = DB::table('tickets')->insertGetId([
+                'TICKET_ID' => $ticketId,
+                'TICKET_LEVEL' => $ticketLevel,
+                'PARENT_TICKET_ID' => $validated['parent_ticket'] ?? null,
+                'TYPE_OF_REQUEST' => $validated['request_type'],
+                'PROJECT_NAME' => $projectName,
+                'DETAILS' => $validated['details'],
+                'EMPLOYID' => $empData['emp_id'],
+                'EMPNAME' => $empData['emp_name'],
+                'DEPARTMENT' => $empData['emp_dept'],
+                'STATUS' => $initialStatus,
+                'ASSIGNED_TO' => null,
+                'CREATED_AT' => now(),
+                'UPDATED_AT' => now(),
+                'DELETED_AT' => null,
+            ]);
+
+            // Insert testers for Testing/Parallel Run requests
+            if (in_array($validated['request_type'], [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])) {
+                if (!empty($validated['testers'])) {
+                    foreach ($validated['testers'] as $testerId) {
+                        DB::table('ticket_testers')->insert([
+                            'TICKET_ID' => $ticketDbId,
+                            'TESTER_ID' => $testerId,
+                            'ASSIGNED_AT' => now(),
+                            'STATUS' => 'PENDING',
+                        ]);
+                    }
+                }
+            }
+
+            // Handle file attachments
+            if ($request->hasFile('attachments')) {
+                $this->handleAttachments(
+                    $request->file('attachments'),
+                    $ticketId,
+                    $empData['emp_id']
+                );
+            }
+
+            // Insert into tickets_history (CREATE action)
+            $this->logTicketHistory(
+                $ticketDbId,
+                'CREATE',
+                null,
+                null,
+                json_encode([
+                    'ticket_id' => $ticketId,
+                    'request_type' => $this->getRequestTypeLabel($validated['request_type']),
+                    'project_name' => $projectName,
+                    'status' => $this->getStatusLabel($initialStatus),
+                ]),
+                $empData['emp_id']
+            );
+
+            // Insert initial remark
+            $initialRemarkText = $workflowPath['can_direct_assign']
+                ? "Ticket created. Awaiting assignment by programmer."
+                : "Ticket created. Awaiting triage by programmer.";
+
+            $this->insertRemark(
+                $ticketDbId,
+                $empData['emp_id'],
+                'CREATION',
+                $initialRemarkText,
+                null,
+                $initialStatus,
+                null,
+                null,
+                false
+            );
+
+            // NOTE: ticket_workflow is NOT inserted here
+            // It will only be inserted when workflow actions occur:
+            // - ASSESSED (when programmer assesses)
+            // - DH_APPROVED (when DH approves)
+            // - OD_APPROVED (when OD approves)
+            // - ASSIGNED (when assigned to programmer)
+            // - etc.
+
+            DB::commit();
+
+            return redirect()
+                ->route('tickets.show', $ticketId)
+                ->with('success', 'Ticket created successfully! Ticket ID: ' . $ticketId);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            // \Log::error('Ticket creation failed', [
+            //     'error' => $e->getMessage(),
+            //     'trace' => $e->getTraceAsString(),
+            //     'request' => $request->all()
+            // ]);
+
+            return redirect()
+                ->back()
+                ->with('error', 'Failed to create ticket: ' . $e->getMessage())
+                ->withInput();
+        }
+    }
+    public function getTicketsDataTable(Request $request)
+    {
+        $empData = session('emp_data');
+        $userRoles = $this->getUserAccountType($empData);
+
+        // DataTable params
+        $search = $request->input('search.value');
+        $start = $request->input('start', 0);
+        $length = $request->input('length', 10);
+        $orderCol = $request->input('order.0.column', 0);
+        $orderDir = $request->input('order.0.dir', 'desc');
+        $columns = $request->input('columns', []);
+
+        // Build query
+        $query = DB::table('tickets')
+            ->whereNull('DELETED_AT');
+
+        if ($request->filled('status')) {
+            $query->where('STATUS', $request->input('status'));
+        }
+
+        if ($request->filled('project')) {
+            $query->where('PROJECT_NAME', $request->input('project'));
+        }
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('TICKET_ID', 'like', "%{$search}%")
+                    ->orWhere('PROJECT_NAME', 'like', "%{$search}%")
+                    ->orWhere('DETAILS', 'like', "%{$search}%");
+            });
+        }
+
+        $orderBy = $columns[$orderCol]['data'] ?? 'CREATED_AT';
+        $query->orderBy($orderBy, $orderDir);
+
+        $total = $query->count();
+        $tickets = $query->offset($start)->limit($length)->get();
+
+        $data = [];
+        foreach ($tickets as $ticket) {
+            $actions = [];
+            if ($this->canPerformAction($ticket, 'ASSESS', $empData, $userRoles)) {
+                $actions[] = 'Assess';
+            }
+            if ($this->canPerformAction($ticket, 'DH_APPROVE', $empData, $userRoles)) {
+                $actions[] = 'DH Approve';
+            }
+            if ($this->canPerformAction($ticket, 'OD_APPROVE', $empData, $userRoles)) {
+                $actions[] = 'OD Approve';
+            }
+            if ($this->canPerformAction($ticket, 'ASSIGN', $empData, $userRoles)) {
+                $actions[] = 'Assign';
+            }
+
+            $data[] = [
+                'ticket_id' => $ticket->TICKET_ID,
+                'emp_name' => $ticket->EMPNAME,
+                'project_name' => $ticket->PROJECT_NAME,
+                'type_of_request' => $this->getRequestTypeLabel($ticket->TYPE_OF_REQUEST),
+                'status' => $this->getStatusLabel($ticket->STATUS),
+                'created_at' => $ticket->CREATED_AT,
+                'actions' => $actions,
+            ];
+        }
+        // dd($data);
+        return Inertia::render('Ticketing/Table', [
+            'tickets' => $data,
+            'recordsTotal' => $total,
+            'recordsFiltered' => $total,
+            'draw' => intval($request->input('draw')),
+            'filters' => $request->all(),
+        ]);
+    }
     /**
      * Determine required workflow path based on request type
      */
@@ -350,14 +587,16 @@ class TicketingController extends Controller
         $userId = $currentUser['emp_id'];
         $requestType = $ticket->TYPE_OF_REQUEST;
         $workflowPath = $this->getRequiredWorkflowPath($requestType);
-
+        // dd($action, $status, $userRoles, $workflowPath);
+        if ($ticket->EMPLOYID == $userId) {
+            return false;
+        }
         switch ($action) {
             case 'ASSESS':
                 if (!$workflowPath['requires_assessment']) {
                     return false;
                 }
-
-                return $status === self::STATUS_TRIAGED &&
+                return in_array($status, [self::STATUS_NEW, self::STATUS_TRIAGED]) &&
                     (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles));
 
             case 'DH_APPROVE':
