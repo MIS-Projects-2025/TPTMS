@@ -1,17 +1,14 @@
-// Create.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Form, Select, Input, Button, Alert, message } from "antd";
 import { Ticket } from "lucide-react";
-import { useForm } from "@inertiajs/react";
+import { useForm, usePage } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
-import { usePage } from "@inertiajs/react";
 import AttachmentUpload from "./AttachmentUpload";
 import { useTicketForm } from "./../../Hooks/useTicketForm";
 
 const { Option } = Select;
 
 const Create = () => {
-    const selectStyle = { height: "4.5rem" };
     const selectDropdownStyle = { borderRadius: "0.5rem" };
 
     const {
@@ -22,19 +19,36 @@ const Create = () => {
         projectOptions = [],
         employeeOptions = [],
     } = usePage().props;
+    console.log(usePage().props);
+    // ✅ Parse URL query parameters
+    const params = new URLSearchParams(window.location.search);
 
-    // Use Inertia's useForm hook
+    // Extract raw Base64 values
+    const parentParam = params.get("parent");
+    const projectParam = params.get("project");
+    const userParam = params.get("user");
+
+    // Decode safely (only once)
+    const parentFromUrl = parentParam ? atob(parentParam) : null;
+    const projectFromUrl = projectParam ? atob(projectParam) : null;
+    const userFromUrl = userParam ? atob(userParam) : null;
+    console.log("URL params:", Object.fromEntries(params.entries()));
+    console.log("Decoded Parent:", parentFromUrl);
+    console.log("Decoded Project:", projectFromUrl);
+    console.log("Decoded User:", userFromUrl);
+
+    // ✅ Initialize form data
     const { data, setData, post, processing, errors, reset } = useForm({
         request_type: null,
-        project: null,
-        project_name: null,
-        parent_ticket: null,
+        project: projectFromUrl || null,
+        project_name: projectFromUrl || null,
+        parent_ticket: parentFromUrl || null,
         testers: [],
         details: "",
         attachments: [],
     });
 
-    // Custom hook for form logic
+    // Handle custom logic for filtering and selections
     const {
         filteredParentTickets,
         isNewSystem,
@@ -52,14 +66,20 @@ const Create = () => {
         onParentTicketChange: (value) => setData("parent_ticket", value),
     });
 
+    // If URL provides parent/project, lock them in place
+    const isChildTicket = Boolean(parentFromUrl && projectFromUrl);
+    console.log("Is Child Ticket:", isChildTicket);
+    console.log("userLog", emp_data.emp_id);
+
     const handleSubmit = (e) => {
-        // Create FormData for file upload
         const formData = new FormData();
 
-        // Append all form fields
         formData.append("request_type", data.request_type);
 
-        if (isNewSystem) {
+        if (isChildTicket) {
+            formData.append("project", projectFromUrl);
+            formData.append("parent_ticket", parentFromUrl);
+        } else if (isNewSystem) {
             formData.append("project_name", data.project_name);
         } else {
             formData.append("project", data.project);
@@ -76,13 +96,12 @@ const Create = () => {
 
         formData.append("details", data.details);
 
-        // Append attachments
         data.attachments.forEach((file, index) => {
             if (file instanceof File) {
                 formData.append(`attachments[${index}]`, file);
             }
         });
-        // Submit using Inertia
+
         post(route("tickets.store"), {
             data: formData,
             forceFormData: true,
@@ -90,9 +109,8 @@ const Create = () => {
                 message.success("Ticket created successfully!");
                 reset();
             },
-            onError: (errors) => {
+            onError: () => {
                 message.error("Please check the form for errors.");
-                console.error(errors);
             },
         });
     };
@@ -116,6 +134,7 @@ const Create = () => {
                             className="rounded-lg"
                         />
 
+                        {/* Employee Info */}
                         <div className="bg-base-100 border border-base-300 rounded-lg p-4 flex justify-between text-sm mb-4">
                             <div className="flex flex-col">
                                 <span className="text-xs text-base-content/50 uppercase">
@@ -149,7 +168,6 @@ const Create = () => {
                             className="space-y-4"
                         >
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                {/* Request Type */}
                                 <Form.Item
                                     label="Type of Request"
                                     required
@@ -165,28 +183,73 @@ const Create = () => {
                                             setData("request_type", value);
                                             handleRequestTypeChange(value);
                                         }}
-                                        styles={{
-                                            popup: {
-                                                root: selectDropdownStyle,
-                                            },
-                                        }}
-                                        className="w-full rounded-lg text-sm h-10 "
+                                        className="w-full rounded-lg text-sm h-10"
                                         showSearch
                                         optionFilterProp="children"
                                     >
-                                        {requestTypes.map((rt) => (
-                                            <Option
-                                                key={rt.value}
-                                                value={rt.value}
-                                            >
-                                                {rt.label}
-                                            </Option>
-                                        ))}
+                                        {requestTypes
+                                            .filter((rt) => {
+                                                // 🔹 If NOT a child ticket → show all
+                                                if (!isChildTicket) return true;
+
+                                                // 🔹 If Child Ticket + user matches logged-in user → only show 5 and 6
+                                                if (
+                                                    isChildTicket &&
+                                                    userFromUrl !=
+                                                        emp_data.emp_id
+                                                ) {
+                                                    return [5, 6].includes(
+                                                        rt.value
+                                                    );
+                                                }
+
+                                                // 🔹 If Child Ticket + user is NOT the same → hide 1, 5, and 6
+                                                if (
+                                                    isChildTicket &&
+                                                    userFromUrl ===
+                                                        emp_data.emp_id
+                                                ) {
+                                                    return ![1, 5, 6].includes(
+                                                        rt.value
+                                                    );
+                                                }
+
+                                                return true;
+                                            })
+                                            .map((rt) => (
+                                                <Option
+                                                    key={rt.value}
+                                                    value={rt.value}
+                                                >
+                                                    {rt.label}
+                                                </Option>
+                                            ))}
                                     </Select>
                                 </Form.Item>
 
-                                {/* Project Input / Select */}
-                                {isNewSystem ? (
+                                {/* Project & Parent Ticket */}
+                                {isChildTicket ? (
+                                    <>
+                                        <Form.Item label="Project" required>
+                                            <Input
+                                                value={projectFromUrl}
+                                                readOnly
+                                                className="input input-bordered w-full rounded-lg text-sm h-10 bg-base-300"
+                                            />
+                                        </Form.Item>
+
+                                        <Form.Item
+                                            label="Parent Ticket"
+                                            required
+                                        >
+                                            <Input
+                                                value={parentFromUrl}
+                                                readOnly
+                                                className="input input-bordered w-full rounded-lg text-sm h-10 bg-base-300"
+                                            />
+                                        </Form.Item>
+                                    </>
+                                ) : isNewSystem ? (
                                     <Form.Item
                                         label="Project Name"
                                         required
@@ -227,11 +290,6 @@ const Create = () => {
                                                 }}
                                                 showSearch
                                                 optionFilterProp="children"
-                                                styles={{
-                                                    popup: {
-                                                        root: selectDropdownStyle,
-                                                    },
-                                                }}
                                                 className="w-full rounded-lg text-sm h-10"
                                             >
                                                 {projectOptions.map((p) => (
@@ -269,11 +327,6 @@ const Create = () => {
                                                 allowClear
                                                 showSearch
                                                 optionFilterProp="children"
-                                                styles={{
-                                                    popup: {
-                                                        root: selectDropdownStyle,
-                                                    },
-                                                }}
                                                 className="w-full rounded-lg text-sm h-10"
                                             >
                                                 {filteredParentTickets.map(
@@ -292,7 +345,7 @@ const Create = () => {
                                 )}
                             </div>
 
-                            {/* Assign Tester only for Testing requests */}
+                            {/* Assign Tester */}
                             {isTesting && (
                                 <Form.Item
                                     label="Assign Tester"
@@ -308,11 +361,6 @@ const Create = () => {
                                         onChange={(value) =>
                                             setData("testers", value)
                                         }
-                                        styles={{
-                                            popup: {
-                                                root: selectDropdownStyle,
-                                            },
-                                        }}
                                         className="w-full rounded-lg text-sm h-10"
                                         showSearch
                                         optionFilterProp="children"
@@ -329,6 +377,7 @@ const Create = () => {
                                 </Form.Item>
                             )}
 
+                            {/* Request Details */}
                             <Form.Item
                                 label="Request Details"
                                 validateStatus={errors.details ? "error" : ""}
@@ -345,6 +394,7 @@ const Create = () => {
                                 />
                             </Form.Item>
 
+                            {/* Attachments */}
                             <Form.Item
                                 label="Attachments"
                                 validateStatus={
@@ -358,6 +408,8 @@ const Create = () => {
                                     }
                                 />
                             </Form.Item>
+
+                            {/* Submit */}
                             <Form.Item className="mb-0">
                                 <Button
                                     type="primary"
@@ -369,7 +421,11 @@ const Create = () => {
                                 >
                                     {!processing && <Ticket />}
                                     {processing
-                                        ? "Creating..."
+                                        ? isChildTicket
+                                            ? "Creating Child Ticket..."
+                                            : "Creating..."
+                                        : isChildTicket
+                                        ? "Create Child Ticket"
                                         : "Create Ticket"}
                                 </Button>
                             </Form.Item>

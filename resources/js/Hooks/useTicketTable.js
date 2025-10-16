@@ -14,26 +14,37 @@ export default function useTicketTable(tickets) {
 
     // Count tickets per status group
     const statusCounts = useMemo(() => {
-        const counts = { all: tickets.length, active: 0, urgent: 0, closed: 0 };
+        const counts = {
+            all: tickets.length,
+            active: 0,
+            urgent: 0,
+            "in progress": 0,
+            closed: 0,
+        };
 
         tickets.forEach((t) => {
             const status = t.status?.toLowerCase();
             const type = t.type_of_request?.toLowerCase();
 
-            // Active group: New, Triaged, In Progress AND user has actions
-            if (
-                ["new", "triaged", "in progress"].includes(status) &&
-                t.actions &&
-                t.actions.length > 0
-            ) {
+            // Active group: New, Triaged statuses (regardless of actions)
+            if (["new", "triaged"].includes(status)) {
                 counts.active += 1;
             }
 
-            // Urgent group: Testing, Parallel Run
-            if (["testing", "parallel run"].includes(type)) counts.urgent += 1;
+            // In Progress
+            if (status === "in progress") {
+                counts["in progress"] += 1;
+            }
+
+            // Urgent group: Testing, Parallel Run request types
+            if (["testing request", "parallel run request"].includes(type)) {
+                counts.urgent += 1;
+            }
 
             // Closed group
-            if (status === "closed") counts.closed += 1;
+            if (status === "closed") {
+                counts.closed += 1;
+            }
         });
 
         return counts;
@@ -60,17 +71,21 @@ export default function useTicketTable(tickets) {
                         matchesStatus = true;
                         break;
                     case "active":
-                        matchesStatus =
-                            ["new", "triaged", "in progress"].includes(
-                                t.status?.toLowerCase()
-                            ) &&
-                            t.actions &&
-                            t.actions.length > 0;
+                        // Active: tickets in New or Triaged status
+                        matchesStatus = ["new", "triaged"].includes(
+                            t.status?.toLowerCase()
+                        );
                         break;
                     case "urgent":
-                        matchesStatus = ["testing", "parallel run"].includes(
-                            t.type_of_request?.toLowerCase()
-                        );
+                        // Urgent: Testing or Parallel Run request types
+                        matchesStatus = [
+                            "testing request",
+                            "parallel run request",
+                        ].includes(t.type_of_request?.toLowerCase());
+                        break;
+                    case "in progress":
+                        matchesStatus =
+                            t.status?.toLowerCase() === "in progress";
                         break;
                     case "closed":
                         matchesStatus = t.status?.toLowerCase() === "closed";

@@ -90,6 +90,7 @@ class TicketingController extends Controller
         FROM employee_masterlist 
         WHERE ACCSTATUS = 1 
         AND EMPLOYID != 0
+        AND EMPPOSITION >=2
         ORDER BY EMPNAME ASC
     ");
 
@@ -523,6 +524,7 @@ class TicketingController extends Controller
 
             $data[] = [
                 'ticket_id' => $ticket->TICKET_ID,
+                'employid' => $ticket->EMPLOYID,
                 'emp_name' => $ticket->EMPNAME,
                 'project_name' => $ticket->PROJECT_NAME,
                 'type_of_request' => $this->getRequestTypeLabel($ticket->TYPE_OF_REQUEST),
