@@ -33,7 +33,7 @@ Route::prefix($app_name)->group(function () {
     Route::post('/{ticketId}/reject/dh', [TicketingController::class, 'rejectDH'])->name('tickets.reject.dh');
     Route::post('/{ticketId}/reject/od', [TicketingController::class, 'rejectOD'])->name('tickets.reject.od');
     Route::post('/{ticketId}/assign', [TicketingController::class, 'assignTicket'])->name('tickets.assign');
-
+    Route::post('/{ticketId}/resubmit', [TicketingController::class, 'resubmitTicket'])->name('tickets.resubmit');
 
     // Workflow Actions - Resolution Phase
     Route::post('/{ticketId}/resolve', [TicketingController::class, 'resolveTicket'])->name('tickets.resolve');

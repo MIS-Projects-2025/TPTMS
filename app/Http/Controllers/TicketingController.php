@@ -21,6 +21,7 @@ class TicketingController extends Controller
     const STATUS_CLOSED = 6;
     const STATUS_REJECTED = 7;
     const STATUS_ON_HOLD = 8;
+    const STATUS_RETURNED = 9; // Returned to requestor for update
 
     // Request Type Constants
     const REQUEST_NEW_SYSTEM = 1;
@@ -43,6 +44,7 @@ class TicketingController extends Controller
     const WORKFLOW_RETURNED = 'RETURNED';
     const WORKFLOW_PUT_ON_HOLD = 'PUT_ON_HOLD';
     const WORKFLOW_RESUMED = 'RESUMED';
+    const WORKFLOW_RESUBMITTED = 'RESUBMITTED';
     public function showTicketForm(): Response
     {
         $empData = session('emp_data');
@@ -124,6 +126,7 @@ class TicketingController extends Controller
             abort(400, 'Invalid hash format');
         }
 
+        // 🔹 Fetch main ticket
         $ticket = DB::selectOne('
         SELECT * FROM tickets 
         WHERE TICKET_ID = ? AND DELETED_AT IS NULL
@@ -133,17 +136,18 @@ class TicketingController extends Controller
             abort(404, 'Ticket not found');
         }
 
+        // 🔹 Fetch attachments
         $attachments = DB::select('
         SELECT * FROM ticket_attachments 
         WHERE TICKET_ID = ? AND DELETED_AT IS NULL
         ORDER BY UPLOADED_AT DESC
     ', [$ticket->ID]);
 
-        // Get current user data
+        // 🔹 Current user info
         $empData = session('emp_data');
         $userRoles = $this->getUserAccountType($empData);
 
-        // Map request type constants to labels
+        // 🔹 Request types
         $requestTypes = [
             1 => 'New System',
             2 => 'Modification',
@@ -153,7 +157,7 @@ class TicketingController extends Controller
             6 => 'Parallel Run',
         ];
 
-        // Map status constants
+        // 🔹 Status types
         $statusTypes = [
             1 => 'New',
             2 => 'Triaged',
@@ -165,9 +169,9 @@ class TicketingController extends Controller
             8 => 'On Hold',
         ];
 
-        // Determine available actions for current user
+        // 🔹 Determine available actions
         $availableActions = [];
-        $possibleActions = ['ASSESS', 'RETURN', 'DH_APPROVE', 'OD_APPROVE', 'ASSIGN', 'RESOLVE', 'CLOSE', 'TEST'];
+        $possibleActions = ['ASSESS', 'RETURN', 'DH_APPROVE', 'OD_APPROVE', 'ASSIGN', 'RESOLVE', 'CLOSE', 'TEST', 'RESUBMIT'];
 
         foreach ($possibleActions as $possibleAction) {
             if ($this->canPerformAction($ticket, $possibleAction, $empData, $userRoles)) {
@@ -175,53 +179,94 @@ class TicketingController extends Controller
             }
         }
 
-        // Get workflow stage information
+        // 🔹 Workflow stage
         $workflowStage = $this->getCurrentWorkflowStage($ticket->ID);
 
-        // Get ticket history from default connection
+        // 🔹 Ticket history
         $ticketHistory = DB::select('
-        SELECT 
-            tw.*
+        SELECT tw.*
         FROM ticket_workflow tw
         WHERE tw.TICKET_ID = ?
         ORDER BY tw.ACTION_AT DESC
     ', [$ticket->ID]);
-
-        // Enrich with employee names from masterlist
         $ticketHistory = $this->enrichWithEmployeeNames($ticketHistory, 'ACTION_BY');
+
         foreach ($ticketHistory as $history) {
             $history->action_by_name = $history->employee_display;
         }
 
-        // Get remarks history from default connection
+        // 🔹 Remarks history
         $remarksHistory = DB::select('
-        SELECT 
-            rh.*
+        SELECT rh.*
         FROM remarks_history rh
         WHERE rh.TICKET_ID = ?
         ORDER BY rh.CREATED_AT DESC
     ', [$ticket->ID]);
-
-        // Enrich with employee names from masterlist
         $remarksHistory = $this->enrichWithEmployeeNames($remarksHistory, 'CREATED_BY');
+
         foreach ($remarksHistory as $remark) {
             $remark->created_by_name = $remark->employee_display;
         }
 
-        // Get assigned employee names if ticket is assigned
+        // 🔹 Assigned employees
         $assignedEmployees = [];
         if (!empty($ticket->ASSIGNED_TO)) {
             $assignedEmployees = $this->getAssignedEmployeeNames($ticket->ASSIGNED_TO);
         }
 
-        // Get programmer options for assignment action
+        // 🔹 Programmer options (if assignable)
         $programmerOptions = [];
         if (in_array('ASSIGN', $availableActions)) {
             $programmerOptions = $this->getProgrammerOptions();
         }
 
+        // 🔹 Child tickets
+        $childTickets = DB::select('
+        SELECT *
+        FROM tickets
+        WHERE PARENT_TICKET_ID = ? 
+        AND DELETED_AT IS NULL
+        ORDER BY CREATED_AT ASC
+    ', [$ticket->TICKET_ID]);
+
+        // 🔹 Tester Info (cross-connection)
+        $testerInfo = [];
+        if (in_array($ticket->TYPE_OF_REQUEST, [5, 6])) {
+            // Step 1: get testers from ticket_testers (default connection)
+            $testers = DB::select('
+            SELECT *
+            FROM ticket_testers
+            WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+        ', [$ticket->ID]);
+
+            if (!empty($testers)) {
+                $testerIds = array_column($testers, 'TESTER_ID');
+
+                // Step 2: get tester names from masterlist.employee_masterlist
+                $placeholders = implode(',', array_fill(0, count($testerIds), '?'));
+                $testerNames = DB::connection('masterlist')->select("
+                SELECT EMPLOYID, EMPNAME
+                FROM employee_masterlist
+                WHERE EMPLOYID IN ($placeholders)
+            ", $testerIds);
+
+                // Step 3: Map names to testers
+                $nameMap = [];
+                foreach ($testerNames as $t) {
+                    $nameMap[$t->EMPLOYID] = $t->EMPNAME;
+                }
+
+                foreach ($testers as &$tester) {
+                    $tester->TESTER_NAME = $nameMap[$tester->TESTER_ID] ?? 'Unknown';
+                }
+
+                $testerInfo = $testers;
+            }
+        }
+
         return Inertia::render('Ticketing/ViewDetails', [
             'ticket' => $ticket,
+            'childTickets' => $childTickets,
             'action' => $action,
             'attachments' => $attachments,
             'requestTypes' => $requestTypes,
@@ -233,8 +278,10 @@ class TicketingController extends Controller
             'assignedEmployees' => $assignedEmployees,
             'programmerOptions' => $programmerOptions,
             'userRoles' => $userRoles,
+            'testerInfo' => $testerInfo, // ✅ tester info with names from masterlist
         ]);
     }
+
     public function store(Request $request)
     {
         // dd($request->all());
@@ -247,7 +294,7 @@ class TicketingController extends Controller
             'testers' => 'nullable|array',
             'testers.*' => 'string|max:20',
             'details' => 'required|string|min:10',
-            'attachments' => 'nullable|array|max:10',
+            'attachments' => 'required|array|max:10',
             'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',
         ]);
 
@@ -443,9 +490,21 @@ class TicketingController extends Controller
 
         // Apply role-based filters
         $query->where(function ($q) use ($userRoles, $userId, $approverIds, $testerTicketIds) {
-            // Programmers or MIS supervisors: only new tickets
             if (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles)) {
-                $q->orWhere('STATUS', 1);
+                $q->orWhereIn('STATUS', [self::STATUS_NEW]);
+
+                // Also include TRIAGED tickets that were resubmitted after being returned
+                $q->orWhereIn('ID', function ($sub) use ($userId) {
+                    $sub->select('TICKET_ID')
+                        ->from('ticket_workflow')
+                        ->where('ACTION_TYPE', self::WORKFLOW_RETURNED)
+                        ->whereIn('TICKET_ID', function ($inner) use ($userId) {
+                            $inner->select('ID')
+                                ->from('tickets')
+                                ->where('ASSIGNED_TO', $userId)
+                                ->where('STATUS', self::STATUS_TRIAGED);
+                        });
+                });
             }
 
             // Department head: only tickets of employees they approve
@@ -495,32 +554,59 @@ class TicketingController extends Controller
         foreach ($tickets as $ticket) {
             $actions = [];
 
+            $userId = $empData['emp_id'];
+
             // Check if user is a tester for this ticket
             $isTester = in_array($ticket->ID, $testerTicketIds);
 
+            // Check if the ticket was previously returned
+            $wasReturned = DB::table('ticket_workflow')
+                ->where('TICKET_ID', $ticket->ID)
+                ->where('ACTION_TYPE', self::WORKFLOW_RETURNED)
+                ->exists();
+
+            // Assess action logic (programmers)
             if ($this->canPerformAction($ticket, 'ASSESS', $empData, $userRoles)) {
-                $actions[] = 'Assess';
+                if (
+                    $ticket->STATUS == self::STATUS_NEW ||
+                    ($ticket->STATUS == self::STATUS_TRIAGED && $wasReturned)
+                ) {
+                    $actions[] = 'Assess';
+                }
             }
+
+            // Approvals
             if ($this->canPerformAction($ticket, 'DH_APPROVE', $empData, $userRoles)) {
                 $actions[] = 'Approve';
             }
             if ($this->canPerformAction($ticket, 'OD_APPROVE', $empData, $userRoles)) {
                 $actions[] = 'Approve';
             }
+
+            // Assign
             if ($this->canPerformAction($ticket, 'ASSIGN', $empData, $userRoles)) {
                 $actions[] = 'Assign';
             }
+
+            // Resolve
             if ($this->canPerformAction($ticket, 'RESOLVE', $empData, $userRoles)) {
                 $actions[] = 'Resolve';
             }
+
+            // Close
             if ($this->canPerformAction($ticket, 'CLOSE', $empData, $userRoles)) {
                 $actions[] = 'Close';
             }
 
-            // Add test action for testers
-            if ($isTester && in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_RESOLVED])) {
+            // Test action for testers
+            if ($isTester && in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_TRIAGED, self::STATUS_RESOLVED])) {
                 $actions[] = 'Test';
             }
+
+            if ($this->canPerformAction($ticket, 'RESUBMIT', $empData, $userRoles)) {
+                $actions[] = 'Resubmit';
+            }
+
 
             $data[] = [
                 'ticket_id' => $ticket->TICKET_ID,
@@ -922,6 +1008,7 @@ class TicketingController extends Controller
             self::STATUS_CLOSED => 'Closed',
             self::STATUS_REJECTED => 'Rejected',
             self::STATUS_ON_HOLD => 'On Hold',
+            self::STATUS_RETURNED => 'Returned',
         ];
 
         return $labels[$status] ?? 'Unknown';
@@ -1125,12 +1212,13 @@ class TicketingController extends Controller
     public function closeTicket(Request $request, $ticketId)
     {
         $validated = $request->validate([
-            'remarks' => 'required|string|min:10|max:1000',
+            'remarks' => 'nullable|string|min:1|max:1000',
             'rating' => 'nullable|integer|min:1|max:5',
         ]);
 
+        // Get ticket info
         $ticket = DB::selectOne('
-        SELECT ID, TICKET_ID, STATUS, EMPLOYID 
+        SELECT ID, TICKET_ID, STATUS, EMPLOYID, TYPE_OF_REQUEST
         FROM tickets 
         WHERE TICKET_ID = ? AND DELETED_AT IS NULL
     ', [$ticketId]);
@@ -1139,19 +1227,47 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Ticket not found'], 404);
         }
 
-        if ($ticket->STATUS !== self::STATUS_RESOLVED) {
-            return response()->json([
-                'error' => 'Only resolved tickets can be closed'
-            ], 400);
+        $currentUser = session('emp_data');
+        $userId = $currentUser['emp_id'];
+
+        // Determine if user can close
+        $isNormalRequestor = !in_array($ticket->TYPE_OF_REQUEST, [5, 6])
+            && $ticket->EMPLOYID === $userId;
+
+        $isAssignedTester = in_array($ticket->TYPE_OF_REQUEST, [5, 6]);
+
+        if ($isAssignedTester) {
+            // Verify user is assigned as tester
+            $tester = DB::selectOne('
+            SELECT ID, STATUS 
+            FROM ticket_testers 
+            WHERE TICKET_ID = ? 
+            AND TESTER_ID = ? 
+            AND DELETED_AT IS NULL
+        ', [$ticket->ID, $userId]);
+
+            if (!$tester) {
+                return response()->json([
+                    'error' => 'You are not assigned as a tester for this ticket'
+                ], 403);
+            }
         }
 
-        $currentUser = session('emp_data');
-
-        // Verify user is the original requestor
-        if ($ticket->EMPLOYID !== $currentUser['emp_id']) {
+        if (!($isNormalRequestor || $tester)) {
             return response()->json([
-                'error' => 'Only the original requestor can close this ticket'
+                'error' => 'You are not authorized to close this ticket'
             ], 403);
+        }
+
+        // Check if ticket can be closed
+        $canClose = $ticket->STATUS === self::STATUS_RESOLVED
+            || (in_array($ticket->TYPE_OF_REQUEST, [5, 6])
+                && in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_TRIAGED]));
+
+        if (!$canClose) {
+            return response()->json([
+                'error' => 'This ticket cannot be closed'
+            ], 400);
         }
 
         DB::beginTransaction();
@@ -1170,7 +1286,7 @@ class TicketingController extends Controller
             $this->logWorkflowAction(
                 $ticket->ID,
                 self::WORKFLOW_CLOSED,
-                $currentUser['emp_id'],
+                $userId,
                 $validated['remarks'],
                 ['rating' => $validated['rating'] ?? null]
             );
@@ -1180,18 +1296,18 @@ class TicketingController extends Controller
                 $ticket->ID,
                 'CLOSURE',
                 'STATUS',
-                $this->getStatusLabel(self::STATUS_RESOLVED),
+                $this->getStatusLabel($ticket->STATUS),
                 $this->getStatusLabel(self::STATUS_CLOSED),
-                $currentUser['emp_id']
+                $userId
             );
 
             // Insert remark
             $this->insertRemark(
                 $ticket->ID,
-                $currentUser['emp_id'],
+                $userId,
                 'CLOSURE',
                 $validated['remarks'],
-                self::STATUS_RESOLVED,
+                $ticket->STATUS,
                 self::STATUS_CLOSED,
                 null,
                 null,
@@ -1209,6 +1325,7 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Closure failed: ' . $e->getMessage()], 500);
         }
     }
+
 
     /**
      * Handle ticket return (send back to requestor for clarification)
@@ -1242,15 +1359,15 @@ class TicketingController extends Controller
         try {
             $oldStatus = $ticket->STATUS;
 
-            // Update ticket - keep status but mark as returned
+            // ✅ Set status to RETURNED instead of NEW
             DB::table('tickets')
                 ->where('ID', $ticket->ID)
                 ->update([
-                    'STATUS' => self::STATUS_NEW, // Reset to NEW
+                    'STATUS' => 9,
                     'UPDATED_AT' => now(),
                 ]);
 
-            // Log workflow action
+            // 🔹 Log workflow action
             $this->logWorkflowAction(
                 $ticket->ID,
                 self::WORKFLOW_RETURNED,
@@ -1258,24 +1375,24 @@ class TicketingController extends Controller
                 $validated['remarks']
             );
 
-            // Log ticket history
+            // 🔹 Log ticket history
             $this->logTicketHistory(
                 $ticket->ID,
                 'RETURN',
                 'STATUS',
                 $this->getStatusLabel($oldStatus),
-                $this->getStatusLabel(self::STATUS_NEW),
+                'Returned', // new readable label
                 $currentUser['emp_id']
             );
 
-            // Insert remark
+            // 🔹 Insert remark
             $this->insertRemark(
                 $ticket->ID,
                 $currentUser['emp_id'],
                 'RETURN',
                 $validated['remarks'],
                 $oldStatus,
-                self::STATUS_NEW,
+                9, // RETURNED
                 null,
                 null,
                 false
@@ -1293,6 +1410,43 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Return failed: ' . $e->getMessage()], 500);
         }
     }
+    public function resubmitTicket(Request $request, $ticketId)
+    {
+        $ticket = DB::table('tickets')
+            ->where('TICKET_ID', $ticketId)
+            ->whereNull('DELETED_AT')
+            ->first();
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        if ($ticket->STATUS != self::STATUS_RETURNED) {
+            return response()->json(['error' => 'Only returned tickets can be resubmitted'], 400);
+        }
+
+        $empData = session('emp_data');
+
+        DB::table('tickets')
+            ->where('ID', $ticket->ID)
+            ->update([
+                'STATUS' => self::STATUS_TRIAGED, // return to assessor/programmer for reassessment
+                'UPDATED_AT' => now(),
+            ]);
+
+        $this->logWorkflowAction(
+            $ticket->ID,
+            self::WORKFLOW_RESUBMITTED,
+            $empData['emp_id'],
+            'Requestor resubmitted ticket after clarification.'
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ticket resubmitted for reassessment.'
+        ]);
+    }
+
     /**
      * Get tester status for a ticket
      */
@@ -1625,9 +1779,14 @@ class TicketingController extends Controller
         $userId = $currentUser['emp_id'];
         $requestType = $ticket->TYPE_OF_REQUEST;
         $workflowPath = $this->getRequiredWorkflowPath($requestType);
-        // Requestor cannot perform actions on their own tickets
+        // Requestor actions
         if ($ticket->EMPLOYID == $userId) {
-            // For testing or parallel run, block all actions
+            // Allow resubmit if returned
+            if ($action === 'RESUBMIT' && $ticket->STATUS === self::STATUS_RETURNED) {
+                return true;
+            }
+
+            // For testing or parallel run, block other actions
             if (in_array($ticket->TYPE_OF_REQUEST, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])) {
                 return false;
             }
@@ -1649,7 +1808,7 @@ class TicketingController extends Controller
                     ->where('STATUS', 'PENDING')
                     ->whereNull('DELETED_AT')
                     ->exists();
-                return $isTester && in_array($status, [self::STATUS_NEW, self::STATUS_IN_PROGRESS]);
+                return $isTester && in_array($status, [self::STATUS_NEW, self::STATUS_TRIAGED, self::STATUS_IN_PROGRESS]);
             }
 
             if ($action === 'CLOSE') {
@@ -1674,8 +1833,28 @@ class TicketingController extends Controller
         switch ($action) {
             case 'ASSESS':
                 if (!$workflowPath['requires_assessment']) return false;
-                return in_array($status, [self::STATUS_NEW, self::STATUS_TRIAGED]) &&
-                    (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles));
+
+                // Check if the ticket was previously returned
+                $wasReturned = DB::table('ticket_workflow')
+                    ->where('TICKET_ID', $ticket->ID)
+                    ->where('ACTION_TYPE', self::WORKFLOW_RETURNED)
+                    ->exists();
+
+                // Programmers or MIS Supervisors can assess if:
+                // - Ticket is NEW (first time)
+                // - Ticket is TRIAGED but was returned (resubmitted)
+                if (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles)) {
+                    if ($status == self::STATUS_NEW) {
+                        return true;
+                    }
+
+                    if ($status == self::STATUS_TRIAGED && $wasReturned) {
+                        return true;
+                    }
+                }
+
+                return false;
+
 
             case 'RETURN':
                 return in_array($status, [self::STATUS_NEW, self::STATUS_TRIAGED]) &&
@@ -1735,6 +1914,14 @@ class TicketingController extends Controller
 
             case 'CLOSE':
                 return $status === self::STATUS_RESOLVED && $ticket->EMPLOYID === $userId;
+            case 'RESUBMIT':
+                // Only the requestor can resubmit
+                if ($ticket->EMPLOYID !== $userId) return false;
+
+                // Only allow if current status is RETURNED
+                if ($status !== self::STATUS_RETURNED) return false;
+
+                return true;
 
             default:
                 return false;

@@ -1,6 +1,25 @@
 import React, { use } from "react";
 import { Table, Input, Space, Select, Tag, Empty, Dropdown } from "antd";
-import { Search, Filter, SortAsc, MoreVertical, Eye, Plus } from "lucide-react";
+import {
+    Search,
+    Filter,
+    SortAsc,
+    MoreVertical,
+    Eye,
+    Plus,
+    CheckCircle,
+    XCircle,
+    Wrench,
+    RefreshCw,
+    UserPlus,
+} from "lucide-react";
+import {
+    ThunderboltOutlined,
+    CheckCircleOutlined,
+    ExclamationCircleOutlined,
+    ToolOutlined,
+    AppstoreOutlined,
+} from "@ant-design/icons";
 import { usePage } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import StatCard from "./StatCard";
@@ -85,7 +104,7 @@ export default function TicketTable() {
               }
             : null;
 
-        // Workflow actions
+        // Workflow actions with icons
         const workflowOptions = actions
             .filter(
                 (action) =>
@@ -93,15 +112,33 @@ export default function TicketTable() {
                     action.toLowerCase() !== "view" &&
                     action.trim() !== ""
             )
-            .map((action) => ({
-                key: action.toLowerCase(),
-                label: (
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm">{action}</span>
-                    </div>
-                ),
-                onClick: () => handleAction(action, record.ticket_id, record),
-            }));
+            .map((action) => {
+                // Define icons per action
+                const iconMap = {
+                    assess: <Filter className="w-4 h-4 text-primary" />,
+                    approve: <CheckCircle className="w-4 h-4 text-green-600" />,
+                    assign: <UserPlus className="w-4 h-4 text-blue-500" />,
+                    resolve: <Wrench className="w-4 h-4 text-purple-600" />,
+                    close: <XCircle className="w-4 h-4 text-red-500" />,
+                    test: <RefreshCw className="w-4 h-4 text-orange-500" />,
+                };
+
+                const icon = iconMap[action.toLowerCase()] || (
+                    <Plus className="w-4 h-4 text-gray-500" />
+                );
+
+                return {
+                    key: action.toLowerCase(),
+                    label: (
+                        <div className="flex items-center gap-2">
+                            {icon}
+                            <span className="text-sm">{action}</span>
+                        </div>
+                    ),
+                    onClick: () =>
+                        handleAction(action, record.ticket_id, record),
+                };
+            });
 
         // Combine all menu items (View always included)
         const allMenuItems = [
@@ -199,7 +236,55 @@ export default function TicketTable() {
 
     return (
         <AuthenticatedLayout>
-            <div className="p-6 bg-base-200 min-h-screen transition-all duration-300">
+            {/* --- Dashboard Stat Cards --- */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                <StatCard
+                    title="All Tickets"
+                    value={statusCounts.all}
+                    color="primary"
+                    icon={AppstoreOutlined}
+                    onClick={setActiveFilter}
+                    isActive={activeFilter === "all"}
+                    filterType="all"
+                />
+                <StatCard
+                    title="Active"
+                    value={statusCounts.active || 0}
+                    color="info"
+                    icon={ThunderboltOutlined}
+                    onClick={setActiveFilter}
+                    isActive={activeFilter === "active"}
+                    filterType="active"
+                />
+                <StatCard
+                    title="Urgent"
+                    value={statusCounts.urgent || 0}
+                    color="error"
+                    icon={ExclamationCircleOutlined}
+                    onClick={setActiveFilter}
+                    isActive={activeFilter === "urgent"}
+                    filterType="urgent"
+                />
+                <StatCard
+                    title="In Progress"
+                    value={statusCounts["in progress"] || 0}
+                    color="warning"
+                    icon={ToolOutlined}
+                    onClick={setActiveFilter}
+                    isActive={activeFilter === "in progress"}
+                    filterType="in progress"
+                />
+                <StatCard
+                    title="Closed"
+                    value={statusCounts.closed || 0}
+                    color="success"
+                    icon={CheckCircleOutlined}
+                    onClick={setActiveFilter}
+                    isActive={activeFilter === "closed"}
+                    filterType="closed"
+                />
+            </div>
+            <div className="p-6 bg-base-200 min-h-screen transition-all duration-300 border border-base-300 rounded-xl shadow-sm">
                 {/* Filters */}
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
                     <div className="flex items-center gap-2">

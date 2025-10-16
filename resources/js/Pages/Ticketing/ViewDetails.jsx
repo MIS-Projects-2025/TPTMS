@@ -6,10 +6,13 @@ import AttachmentUpload from "./AttachmentUpload";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import ActionButton from "./ActionButton";
 import ActivityTimeline from "./ActivityTimeline";
+import ChildTicket from "./ChildTicket";
 
 const ViewDetails = () => {
     const {
+        action,
         ticket,
+        childTickets = [],
         attachments,
         requestTypes,
         statusTypes,
@@ -18,11 +21,13 @@ const ViewDetails = () => {
         ticketHistory = [],
         remarksHistory = [],
         assignedEmployees = [],
+        testerInfo = [],
         userRoles = [],
     } = usePage().props;
-    // console.log(UsePage().props);
+    console.log(usePage().props);
     if (!ticket) return <div>No ticket data found</div>;
-
+    const isResubmitAllowed =
+        ticket.STATUS === "Returned" && ticket.EMPLOYID === empData.emp_id;
     const goToParentTicket = () => {
         if (!ticket.PARENT_TICKET_ID) return;
         const hash = btoa(`${ticket.PARENT_TICKET_ID}:VIEWONLY`);
@@ -175,13 +180,31 @@ const ViewDetails = () => {
                             <p className="text-lg">{ticket.DETAILS}</p>
                         </div>
 
+                        {Array.isArray(testerInfo) && testerInfo.length > 0 && (
+                            <div>
+                                <p className="text-xs font-semibold text-base-content/60 mb-1">
+                                    Tester
+                                </p>
+                                <p className="text-lg">
+                                    {testerInfo.map((t, i) => (
+                                        <span key={i}>
+                                            {t.TESTER_NAME}
+                                            {i < testerInfo.length - 1 && (
+                                                <br />
+                                            )}
+                                        </span>
+                                    ))}
+                                </p>
+                            </div>
+                        )}
+
                         {/* Attachments */}
                         <div>
                             <p className="text-xs font-semibold text-base-content/60 mb-1">
                                 Attachments
                             </p>
                             <AttachmentUpload
-                                viewOnly
+                                viewOnly={!isResubmitAllowed}
                                 existingFiles={(attachments || []).map(
                                     (file) => ({
                                         name: file.FILE_NAME,
@@ -245,27 +268,34 @@ const ViewDetails = () => {
                         </div>
 
                         {/* Actions */}
-                        {availableActions && availableActions.length > 0 && (
-                            <div className="mt-6 pt-6 border-t border-base-content/10">
-                                <p className="text-sm font-semibold text-base-content/60 mb-4">
-                                    Available Actions
-                                </p>
-                                <div className="flex flex-wrap gap-3">
-                                    {availableActions.map((action) => (
-                                        <ActionButton
-                                            key={action}
-                                            action={action}
-                                            ticketId={ticket.TICKET_ID}
-                                            ticketStatus={ticket.STATUS}
-                                        />
-                                    ))}
+                        {action != "VIEW" &&
+                            availableActions &&
+                            availableActions.length > 0 && (
+                                <div className="mt-6 pt-6 border-t border-base-content/10">
+                                    <p className="text-sm font-semibold text-base-content/60 mb-4">
+                                        Available Actions
+                                    </p>
+                                    <div className="flex flex-wrap gap-3">
+                                        {availableActions.map((action) => (
+                                            <ActionButton
+                                                key={action}
+                                                action={action}
+                                                ticketId={ticket.TICKET_ID}
+                                                ticketStatus={ticket.STATUS}
+                                            />
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
 
                         <ActivityTimeline
                             ticketHistory={ticketHistory}
                             remarksHistory={remarksHistory}
+                            statusTypes={statusTypes}
+                        />
+                        <ChildTicket
+                            childTickets={childTickets}
+                            requestTypes={requestTypes}
                             statusTypes={statusTypes}
                         />
                     </div>

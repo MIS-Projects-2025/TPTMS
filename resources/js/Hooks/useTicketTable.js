@@ -1,107 +1,94 @@
-import { useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 
-export default function useTicketTable(tickets) {
+export default function useTicketTable(tickets = []) {
     const [searchText, setSearchText] = useState("");
     const [selectedProject, setSelectedProject] = useState(null);
-    const [sortOrder, setSortOrder] = useState("desc");
+    const [sortOrder, setSortOrder] = useState("asc");
     const [activeFilter, setActiveFilter] = useState("all");
 
-    // Extract unique project list
-    const projects = useMemo(
-        () => [...new Set(tickets.map((t) => t.project_name))],
-        [tickets]
-    );
+    // --- Filter by search and project
+    const filteredTickets = useMemo(() => {
+        return tickets.filter((t) => {
+            const matchesSearch = t.project_name
+                ?.toLowerCase()
+                .includes(searchText.toLowerCase());
+            const matchesProject = selectedProject
+                ? t.project_name === selectedProject
+                : true;
+            return matchesSearch && matchesProject;
+        });
+    }, [tickets, searchText, selectedProject]);
 
-    // Count tickets per status group
+    // --- Categorization Logic
+    const categorizeTicket = (ticket) => {
+        const actions = Array.isArray(ticket.actions)
+            ? ticket.actions.map((a) => a.toLowerCase())
+            : [];
+
+        const typeLabel = (ticket.type_of_request || "").toLowerCase();
+        const statusLabel = (ticket.status || "").toLowerCase();
+
+        const hasView = actions.includes("view");
+        const hasOtherActions = actions.some(
+            (a) => a !== "view" && a !== "test" && a !== "parallel"
+        );
+
+        const categories = new Set(["all"]);
+
+        // 1️⃣ If only VIEW
+        if (actions.length === 1 && hasView) {
+            if (statusLabel === "closed") {
+                categories.add("closed");
+            }
+            return Array.from(categories);
+        }
+
+        // 2️⃣ If VIEW + other actions OR other actions only
+        if (hasOtherActions || (hasView && actions.length > 1)) {
+            if (["testing", "parallel run"].includes(typeLabel)) {
+                categories.add("urgent");
+            } else {
+                categories.add("active");
+            }
+        }
+
+        return Array.from(categories);
+    };
+
+    // --- Count tickets per category
     const statusCounts = useMemo(() => {
         const counts = {
-            all: tickets.length,
+            all: 0,
             active: 0,
             urgent: 0,
-            "in progress": 0,
             closed: 0,
         };
 
         tickets.forEach((t) => {
-            const status = t.status?.toLowerCase();
-            const type = t.type_of_request?.toLowerCase();
-
-            // Active group: New, Triaged statuses (regardless of actions)
-            if (["new", "triaged"].includes(status)) {
-                counts.active += 1;
-            }
-
-            // In Progress
-            if (status === "in progress") {
-                counts["in progress"] += 1;
-            }
-
-            // Urgent group: Testing, Parallel Run request types
-            if (["testing request", "parallel run request"].includes(type)) {
-                counts.urgent += 1;
-            }
-
-            // Closed group
-            if (status === "closed") {
-                counts.closed += 1;
-            }
+            const cats = categorizeTicket(t);
+            cats.forEach((c) => {
+                counts[c] = (counts[c] || 0) + 1;
+            });
         });
 
         return counts;
     }, [tickets]);
 
-    // Filter + Sort logic
-    const filteredTickets = useMemo(() => {
-        return tickets
-            .filter((t) => {
-                const matchesSearch =
-                    t.ticket_id
-                        .toLowerCase()
-                        .includes(searchText.toLowerCase()) ||
-                    t.project_name
-                        .toLowerCase()
-                        .includes(searchText.toLowerCase());
+    // --- Apply active filter
+    const visibleTickets = useMemo(() => {
+        if (activeFilter === "all") return filteredTickets;
+        return filteredTickets.filter((t) =>
+            categorizeTicket(t).includes(activeFilter)
+        );
+    }, [filteredTickets, activeFilter]);
 
-                const matchesProject =
-                    !selectedProject || t.project_name === selectedProject;
-
-                let matchesStatus = false;
-                switch (activeFilter) {
-                    case "all":
-                        matchesStatus = true;
-                        break;
-                    case "active":
-                        // Active: tickets in New or Triaged status
-                        matchesStatus = ["new", "triaged"].includes(
-                            t.status?.toLowerCase()
-                        );
-                        break;
-                    case "urgent":
-                        // Urgent: Testing or Parallel Run request types
-                        matchesStatus = [
-                            "testing request",
-                            "parallel run request",
-                        ].includes(t.type_of_request?.toLowerCase());
-                        break;
-                    case "in progress":
-                        matchesStatus =
-                            t.status?.toLowerCase() === "in progress";
-                        break;
-                    case "closed":
-                        matchesStatus = t.status?.toLowerCase() === "closed";
-                        break;
-                    default:
-                        matchesStatus = true;
-                }
-
-                return matchesSearch && matchesProject && matchesStatus;
-            })
-            .sort((a, b) =>
-                sortOrder === "asc"
-                    ? new Date(a.created_at) - new Date(b.created_at)
-                    : new Date(b.created_at) - new Date(a.created_at)
-            );
-    }, [tickets, searchText, selectedProject, sortOrder, activeFilter]);
+    // --- Project list
+    const projects = useMemo(() => {
+        const unique = new Set(
+            tickets.map((t) => t.project_name).filter(Boolean)
+        );
+        return Array.from(unique);
+    }, [tickets]);
 
     return {
         searchText,
@@ -114,6 +101,6 @@ export default function useTicketTable(tickets) {
         setActiveFilter,
         projects,
         statusCounts,
-        filteredTickets,
+        filteredTickets: visibleTickets,
     };
 }

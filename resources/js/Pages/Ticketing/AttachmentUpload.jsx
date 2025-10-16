@@ -22,6 +22,7 @@ const AttachmentUpload = ({
     const [fileList, setFileList] = useState([]);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState("");
+    const [editableAttachments, setEditableAttachments] = useState([]);
 
     const allowedTypes = [
         "image/png",

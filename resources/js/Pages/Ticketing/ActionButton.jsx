@@ -10,6 +10,7 @@ import {
     XCircle,
     Pause,
 } from "lucide-react";
+import AttachmentUpload from "./AttachmentUpload";
 
 const ActionButton = ({ action, ticketId, ticketStatus }) => {
     const [showModal, setShowModal] = useState(false);
@@ -18,12 +19,49 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
     const [rating, setRating] = useState(0);
     const [loading, setLoading] = useState(false);
     const [actionType, setActionType] = useState(null);
+    const [editableAttachments, setEditableAttachments] = useState([]); // ADD THIS LINE
 
     const { programmerOptions = [] } = usePage().props;
 
     const handleAction = (type) => {
         setActionType(type);
 
+        // Handle RESUBMIT separately before other validations
+        if (action === "RESUBMIT") {
+            if (editableAttachments.length === 0) {
+                message.error(
+                    "Please attach at least one file before resubmitting"
+                );
+                return;
+            }
+
+            setLoading(true);
+            const formData = new FormData();
+            formData.append("ticket_id", ticketId);
+            formData.append("remarks", remarks);
+
+            editableAttachments.forEach((file) => {
+                if (file.originFileObj) {
+                    formData.append("attachments[]", file.originFileObj);
+                }
+            });
+
+            router.post(route("tickets.resubmit", ticketId), formData, {
+                onSuccess: () => {
+                    message.success("Ticket resubmitted successfully!");
+                    setShowModal(false);
+                    setEditableAttachments([]);
+                    setRemarks("");
+                },
+                onError: (errors) => {
+                    message.error(errors.message || "Failed to resubmit");
+                },
+                onFinish: () => setLoading(false),
+            });
+            return;
+        }
+
+        // Validation for other actions
         if (
             !remarks.trim() &&
             (type === "disapprove" ||
@@ -40,12 +78,19 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
 
         setLoading(true);
 
+        // Build data object only with non-null/non-zero values for optional fields
         const data = {
             remarks,
             action_type: type,
-            ...(action === "ASSIGN" && { assigned_to: selectedProgrammers }),
-            ...(action === "CLOSE" && { rating }),
         };
+
+        if (action === "ASSIGN" && selectedProgrammers.length > 0) {
+            data.assigned_to = selectedProgrammers;
+        }
+
+        if (action === "CLOSE" && rating > 0) {
+            data.rating = rating;
+        }
 
         const routeMap = {
             ASSESS: type === "approve" ? "tickets.assess" : "tickets.return",
@@ -62,6 +107,7 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
             RESOLVE: type === "approve" ? "tickets.resolve" : "tickets.hold",
             CLOSE: type === "approve" ? "tickets.close" : "tickets.reopen",
             ON_HOLD: "tickets.hold",
+            TEST: type === "approve" ? "tickets.close" : "tickets.return",
         };
 
         router.post(route(routeMap[action], ticketId), data, {
@@ -72,6 +118,7 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                 setSelectedProgrammers([]);
                 setRating(0);
                 setActionType(null);
+                setEditableAttachments([]);
             },
             onError: (errors) => {
                 message.error(errors.message || "Action failed");
@@ -110,12 +157,6 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                 approveText: "Assess",
                 disapproveText: "Return",
                 showBoth: true,
-            },
-            RETURN: {
-                label: "Return to Requestor",
-                icon: <RefreshCw className="w-4 h-4" />,
-                approveText: "Return",
-                showBoth: false,
             },
             DH_APPROVE: {
                 label: "Department Head Review",
@@ -164,6 +205,12 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                 disapproveText: "Return",
                 showBoth: true,
             },
+            RESUBMIT: {
+                label: "Resubmit Ticket",
+                icon: <RefreshCw className="w-4 h-4" />,
+                approveText: "Resubmit",
+                showBoth: false,
+            },
         };
 
         return configs[action] || null;
@@ -171,6 +218,15 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
 
     const config = getButtonConfig();
     if (!config) return null;
+
+    const handleResetModal = () => {
+        setShowModal(false);
+        setRemarks("");
+        setSelectedProgrammers([]);
+        setRating(0);
+        setActionType(null);
+        setEditableAttachments([]);
+    };
 
     const renderModalContent = () => {
         switch (action) {
@@ -223,7 +279,44 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
-
+            case "RESUBMIT":
+                return (
+                    <div className="space-y-4">
+                        <p className="text-sm font-semibold mb-3">
+                            Edit Attachments
+                        </p>
+                        <AttachmentUpload
+                            viewOnly={false}
+                            onFilesChange={(files) => {
+                                setEditableAttachments(
+                                    files.map((f) => ({
+                                        originFileObj: f,
+                                        name: f.name,
+                                        size: f.size,
+                                        type: f.type,
+                                        uid: `${f.name}-${
+                                            f.size
+                                        }-${Date.now()}`,
+                                    }))
+                                );
+                            }}
+                        />
+                        <div>
+                            <label className="label">
+                                <span className="label-text font-semibold">
+                                    Remarks (Optional)
+                                </span>
+                            </label>
+                            <textarea
+                                className="textarea textarea-bordered w-full"
+                                placeholder="Add remarks for resubmission..."
+                                value={remarks}
+                                onChange={(e) => setRemarks(e.target.value)}
+                                rows={4}
+                            />
+                        </div>
+                    </div>
+                );
             case "CLOSE":
                 return (
                     <div className="space-y-4">
@@ -262,7 +355,6 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
-
             case "RESOLVE":
                 return (
                     <div className="space-y-4">
@@ -282,7 +374,6 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
-
             case "ASSESS":
                 return (
                     <div className="space-y-4">
@@ -321,7 +412,6 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
-
             case "DH_APPROVE":
             case "OD_APPROVE":
                 return (
@@ -410,29 +500,25 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                     </div>
                 }
                 open={showModal}
-                onCancel={() => {
-                    setShowModal(false);
-                    setRemarks("");
-                    setSelectedProgrammers([]);
-                    setRating(0);
-                    setActionType(null);
-                }}
+                onCancel={handleResetModal}
                 footer={
                     <div className="flex justify-end gap-2">
                         <button
-                            onClick={() => {
-                                setShowModal(false);
-                                setRemarks("");
-                                setSelectedProgrammers([]);
-                                setRating(0);
-                                setActionType(null);
-                            }}
+                            onClick={handleResetModal}
                             className="btn btn-ghost"
                             disabled={loading}
                         >
                             Cancel
                         </button>
-                        {config.showBoth ? (
+                        {action === "RESUBMIT" ? (
+                            <button
+                                onClick={() => handleAction("approve")}
+                                className="btn btn-success gap-2"
+                                disabled={loading}
+                            >
+                                <Check className="w-4 h-4" /> Resubmit
+                            </button>
+                        ) : config.showBoth ? (
                             <>
                                 <button
                                     onClick={() => handleAction("disapprove")}
