@@ -8,7 +8,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Support\Facades\Storage;
 use App\Services\DataTableService;
-
+use Illuminate\Support\Facades\Log;
 
 class TicketingController extends Controller
 {
@@ -281,11 +281,8 @@ class TicketingController extends Controller
             'testerInfo' => $testerInfo, // ✅ tester info with names from masterlist
         ]);
     }
-
     public function store(Request $request)
     {
-        // dd($request->all());
-        // Validation
         $validated = $request->validate([
             'request_type' => 'required|integer|in:1,2,3,4,5,6',
             'project' => 'required_unless:request_type,1|nullable|string|max:255',
@@ -294,56 +291,75 @@ class TicketingController extends Controller
             'testers' => 'nullable|array',
             'testers.*' => 'string|max:20',
             'details' => 'required|string|min:10',
-            'attachments' => 'required|array|max:10',
+            'attachments' => 'nullable|array|max:10',
             'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',
         ]);
 
-        DB::beginTransaction();
+        Log::info('=== TICKET CREATION START ===');
+        Log::info('Validated data:', $validated);
 
-        try {
-            $empData = session('emp_data');
-            $workflowPath = $this->getRequiredWorkflowPath($validated['request_type']);
+        $empData = session('emp_data');
+        Log::info('Employee data from session:', $empData ?? ['error' => 'NO SESSION DATA']);
 
-            // Determine ticket level and ID
-            $isChildTicket = !empty($validated['parent_ticket']);
-            $ticketLevel = $isChildTicket ? 'child' : 'parent';
+        if (!$empData) {
+            Log::error('Employee data is missing from session!');
+            return redirect()->back()->with('error', 'Session expired. Please login again.')->withInput();
+        }
 
-            if ($isChildTicket) {
-                $ticketId = $this->generateChildTicketId($validated['parent_ticket']);
-            } else {
-                $ticketId = $this->generateTicketNumber();
-            }
+        $workflowPath = $this->getRequiredWorkflowPath($validated['request_type']);
+        Log::info('Workflow path:', $workflowPath ?? ['error' => 'NO WORKFLOW PATH']);
 
-            // Determine initial status based on request type
-            if ($workflowPath['can_direct_assign']) {
-                // Testing/Parallel Run: Direct to NEW (waiting for assignment)
-                $initialStatus = self::STATUS_NEW;
-            } else {
-                // Other requests: Direct to NEW (waiting for triage/assessment)
-                $initialStatus = self::STATUS_NEW;
-            }
+        // Determine ticket level and ID
+        $isChildTicket = !empty($validated['parent_ticket']);
+        $ticketLevel = $isChildTicket ? 'child' : 'parent';
 
-            // Determine project name
-            $projectName = null;
-            if ($validated['request_type'] == self::REQUEST_NEW_SYSTEM) {
-                // New System - use provided project name
-                $projectName = $validated['project_name'];
-            } elseif (!empty($validated['project'])) {
-                // Existing project - use selected project
-                $projectName = $validated['project'];
-            } elseif (!empty($validated['parent_ticket'])) {
-                // Child ticket - inherit from parent
-                $parentTicket = DB::selectOne('
+        if ($isChildTicket) {
+            $ticketId = $this->generateChildTicketId($validated['parent_ticket']);
+        } else {
+            $ticketId = $this->generateTicketNumber();
+        }
+
+        Log::info('Generated Ticket ID: ' . $ticketId);
+
+        // Determine initial status based on request type
+        if ($workflowPath['can_direct_assign']) {
+            $initialStatus = self::STATUS_NEW;
+        } else {
+            $initialStatus = self::STATUS_NEW;
+        }
+
+        // Determine project name
+        $projectName = null;
+        if ($validated['request_type'] == self::REQUEST_NEW_SYSTEM) {
+            $projectName = $validated['project_name'];
+        } elseif (!empty($validated['project'])) {
+            $projectName = $validated['project'];
+        } elseif (!empty($validated['parent_ticket'])) {
+            $parentTicket = DB::selectOne('
                 SELECT PROJECT_NAME 
                 FROM tickets 
                 WHERE TICKET_ID = ? 
                 AND DELETED_AT IS NULL
             ', [$validated['parent_ticket']]);
 
-                if ($parentTicket) {
-                    $projectName = $parentTicket->PROJECT_NAME;
-                }
+            if ($parentTicket) {
+                $projectName = $parentTicket->PROJECT_NAME;
             }
+        }
+
+        Log::info('Project name determined as: ' . ($projectName ?? 'NULL'));
+
+        $ticketSaved = false;
+        $projectCreated = false;
+        $projId = null;
+        $errors = [];
+
+        // ========== SAVE TICKET (Independent) ==========
+        DB::beginTransaction();
+        Log::info('Transaction started');
+
+        try {
+            Log::info('Attempting to insert ticket with ID: ' . $ticketId);
 
             // Insert into tickets table
             $ticketDbId = DB::table('tickets')->insertGetId([
@@ -363,6 +379,8 @@ class TicketingController extends Controller
                 'DELETED_AT' => null,
             ]);
 
+            Log::info('✓ Ticket inserted successfully with DB ID: ' . $ticketDbId);
+
             // Insert testers for Testing/Parallel Run requests
             if (in_array($validated['request_type'], [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])) {
                 if (!empty($validated['testers'])) {
@@ -374,19 +392,23 @@ class TicketingController extends Controller
                             'STATUS' => 'PENDING',
                         ]);
                     }
+                    Log::info('✓ Testers inserted');
                 }
             }
 
             // Handle file attachments
             if ($request->hasFile('attachments')) {
+                Log::info('Processing attachments...');
                 $this->handleAttachments(
                     $request->file('attachments'),
                     $ticketId,
                     $empData['emp_id']
                 );
+                Log::info('✓ Attachments handled');
             }
 
             // Insert into tickets_history (CREATE action)
+            Log::info('Logging ticket history...');
             $this->logTicketHistory(
                 $ticketDbId,
                 'CREATE',
@@ -400,12 +422,14 @@ class TicketingController extends Controller
                 ]),
                 $empData['emp_id']
             );
+            Log::info('✓ Ticket history logged');
 
             // Insert initial remark
             $initialRemarkText = $workflowPath['can_direct_assign']
                 ? "Ticket created. Awaiting assignment by programmer."
                 : "Ticket created. Awaiting triage by programmer.";
 
+            Log::info('Inserting initial remark...');
             $this->insertRemark(
                 $ticketDbId,
                 $empData['emp_id'],
@@ -417,32 +441,68 @@ class TicketingController extends Controller
                 null,
                 false
             );
-
-            // NOTE: ticket_workflow is NOT inserted here
-            // It will only be inserted when workflow actions occur:
-            // - ASSESSED (when programmer assesses)
-            // - DH_APPROVED (when DH approves)
-            // - OD_APPROVED (when OD approves)
-            // - ASSIGNED (when assigned to programmer)
-            // - etc.
+            Log::info('✓ Initial remark inserted');
 
             DB::commit();
-
-            return redirect()
-                ->route('tickets.show', $ticketId)
-                ->with('success', 'Ticket created successfully! Ticket ID: ' . $ticketId);
+            $ticketSaved = true;
+            Log::info('Transaction committed. Ticket saved successfully!');
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('TICKET INSERTION ERROR: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            $errors[] = 'Ticket Error: ' . $e->getMessage();
+        }
 
-            // \Log::error('Ticket creation failed', [
-            //     'error' => $e->getMessage(),
-            //     'trace' => $e->getTraceAsString(),
-            //     'request' => $request->all()
-            // ]);
+        // ========== CREATE PROJECT (Independent) - Only for NEW SYSTEM requests ==========
+        if ($validated['request_type'] == self::REQUEST_NEW_SYSTEM) {
+            try {
+                Log::info('Creating project for NEW SYSTEM request...');
+                $projectController = new ProjectController();
+                $projId = $projectController->createFromTicket(
+                    $projectName ?? ('Project for ' . $ticketId),
+                    $validated['details'],
+                    $empData['emp_dept'],
+                    $empData['emp_id'],
+                    $empData['emp_id']
+                );
 
+                if ($projId) {
+                    $projectCreated = true;
+                    Log::info('✓ Project created with ID: ' . $projId);
+                } else {
+                    $errors[] = 'Project Error: No ID returned from project creation';
+                    Log::error('Project creation returned no ID');
+                }
+            } catch (\Exception $projException) {
+                $errors[] = 'Project Error: ' . $projException->getMessage();
+                Log::error('PROJECT CREATION ERROR: ' . $projException->getMessage());
+            }
+        } else {
+            $projectCreated = true;
+        }
+
+        // ========== RESPONSE ==========
+        if ($ticketSaved && $projectCreated) {
+            Log::info('=== TICKET CREATION COMPLETE (SUCCESS) ===');
+            return redirect()
+                ->route('tickets.view', $ticketId)
+                ->with('success', 'Ticket created successfully! Ticket ID: ' . $ticketId . ($projId ? ' | Project ID: ' . $projId : ''));
+        } elseif ($ticketSaved && !$projectCreated) {
+            Log::info('=== TICKET SAVED BUT PROJECT FAILED ===');
+            return redirect()
+                ->route('tickets.view', $ticketId)
+                ->with('warning', 'Ticket created successfully (ID: ' . $ticketId . ') but project creation failed. Error: ' . implode(' | ', $errors));
+        } elseif (!$ticketSaved && $projectCreated) {
+            Log::info('=== TICKET FAILED BUT PROJECT SAVED ===');
             return redirect()
                 ->back()
-                ->with('error', 'Failed to create ticket: ' . $e->getMessage())
+                ->with('warning', 'Ticket creation failed but project was created (ID: ' . $projId . '). Error: ' . implode(' | ', $errors))
+                ->withInput();
+        } else {
+            Log::info('=== BOTH TICKET AND PROJECT FAILED ===');
+            return redirect()
+                ->back()
+                ->with('error', 'Both ticket and project creation failed. Errors: ' . implode(' | ', $errors))
                 ->withInput();
         }
     }
@@ -1028,13 +1088,17 @@ class TicketingController extends Controller
         ]);
 
         $ticket = DB::selectOne('
-        SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
-        FROM tickets 
-        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
-    ', [$ticketId]);
+            SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST, PROJECT_NAME
+            FROM tickets
+            WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+        ', [$ticketId]);
 
         if (!$ticket) {
             return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        if (!$ticket->PROJECT_NAME) {
+            return response()->json(['error' => 'Project not found'], 400);
         }
 
         $workflowPath = $this->getRequiredWorkflowPath($ticket->TYPE_OF_REQUEST);
@@ -1051,16 +1115,30 @@ class TicketingController extends Controller
 
         DB::beginTransaction();
         try {
-            // Update ticket
+            // 1. Update TICKET to IN_PROGRESS
             DB::table('tickets')
                 ->where('ID', $ticket->ID)
                 ->update([
                     'ASSIGNED_TO' => $assignedToString,
-                    'STATUS' => self::STATUS_IN_PROGRESS, // Auto-acknowledge
+                    'STATUS' => self::STATUS_IN_PROGRESS,
                     'UPDATED_AT' => now(),
                 ]);
 
-            // Log workflow action
+            // 2. Update PROJECT to IN_PROGRESS via ProjectController
+            $projectController = new ProjectController();
+            $projectController->updateToInProgress($ticket->PROJECT_NAME, $assignedToString, $currentUser['emp_id']);
+
+            // 3. Create TASK via TaskController
+            $taskController = new TaskController();
+            $taskId = $taskController->createFromTicket(
+                $ticket->TICKET_ID,
+                $ticket->PROJECT_NAME,
+                $validated['remarks'],
+                $assignedToString,
+                $currentUser['emp_id']
+            );
+
+            // 4. Log workflow action
             $this->logWorkflowAction(
                 $ticket->ID,
                 self::WORKFLOW_ASSIGNED,
@@ -1069,7 +1147,7 @@ class TicketingController extends Controller
                 ['assigned_to' => $validated['assigned_to']]
             );
 
-            // Log ticket history
+            // 5. Log ticket history
             $this->logTicketHistory(
                 $ticket->ID,
                 'ASSIGNMENT',
@@ -1079,13 +1157,13 @@ class TicketingController extends Controller
                 $currentUser['emp_id']
             );
 
-            // Insert remark
+            // 6. Insert remark
             $this->insertRemark(
                 $ticket->ID,
                 $currentUser['emp_id'],
                 'ASSIGNMENT',
-                $validated['remarks'] ?? 'Ticket assigned and auto-acknowledged',
-                $ticket->STATUS,
+                $validated['remarks'] ?? 'Ticket assigned and work in progress',
+                self::STATUS_APPROVED,
                 self::STATUS_IN_PROGRESS,
                 null,
                 $assignedToString,
@@ -1096,15 +1174,19 @@ class TicketingController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Ticket assigned successfully. Status changed to In Progress.',
-                'next_step' => 'Waiting for programmer to complete and resolve'
+                'message' => 'Ticket assigned successfully. Project and task moved to In Progress.',
+                'ticket_id' => $ticket->TICKET_ID,
+                'project_id' => $ticket->PROJECT_NAME,
+                'task_id' => $taskId,
+                'project_status' => 'In Progress',
+                'assigned_to' => $validated['assigned_to'],
+                'next_step' => 'Programmer(s) can now start work on the ticket'
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Assignment failed: ' . $e->getMessage()], 500);
         }
     }
-
     /**
      * Handle ticket resolution (by assigned programmer)
      */
@@ -1216,12 +1298,11 @@ class TicketingController extends Controller
             'rating' => 'nullable|integer|min:1|max:5',
         ]);
 
-        // Get ticket info
         $ticket = DB::selectOne('
-        SELECT ID, TICKET_ID, STATUS, EMPLOYID, TYPE_OF_REQUEST
-        FROM tickets 
-        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
-    ', [$ticketId]);
+            SELECT ID, TICKET_ID, STATUS, EMPLOYID, TYPE_OF_REQUEST, PROJECT_NAME
+            FROM tickets
+            WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+        ', [$ticketId]);
 
         if (!$ticket) {
             return response()->json(['error' => 'Ticket not found'], 404);
@@ -1231,20 +1312,19 @@ class TicketingController extends Controller
         $userId = $currentUser['emp_id'];
 
         // Determine if user can close
-        $isNormalRequestor = !in_array($ticket->TYPE_OF_REQUEST, [5, 6])
+        $isNormalRequestor = !in_array($ticket->TYPE_OF_REQUEST, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])
             && $ticket->EMPLOYID === $userId;
 
-        $isAssignedTester = in_array($ticket->TYPE_OF_REQUEST, [5, 6]);
+        $isAssignedTester = in_array($ticket->TYPE_OF_REQUEST, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN]);
 
         if ($isAssignedTester) {
-            // Verify user is assigned as tester
             $tester = DB::selectOne('
-            SELECT ID, STATUS 
-            FROM ticket_testers 
-            WHERE TICKET_ID = ? 
-            AND TESTER_ID = ? 
-            AND DELETED_AT IS NULL
-        ', [$ticket->ID, $userId]);
+                SELECT ID, STATUS
+                FROM ticket_testers
+                WHERE TICKET_ID = ?
+                AND TESTER_ID = ?
+                AND DELETED_AT IS NULL
+            ', [$ticket->ID, $userId]);
 
             if (!$tester) {
                 return response()->json([
@@ -1253,7 +1333,7 @@ class TicketingController extends Controller
             }
         }
 
-        if (!($isNormalRequestor || $tester)) {
+        if (!($isNormalRequestor || ($isAssignedTester && isset($tester)))) {
             return response()->json([
                 'error' => 'You are not authorized to close this ticket'
             ], 403);
@@ -1261,18 +1341,18 @@ class TicketingController extends Controller
 
         // Check if ticket can be closed
         $canClose = $ticket->STATUS === self::STATUS_RESOLVED
-            || (in_array($ticket->TYPE_OF_REQUEST, [5, 6])
+            || (in_array($ticket->TYPE_OF_REQUEST, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])
                 && in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_TRIAGED]));
 
         if (!$canClose) {
             return response()->json([
-                'error' => 'This ticket cannot be closed'
+                'error' => 'This ticket cannot be closed in current status'
             ], 400);
         }
 
         DB::beginTransaction();
         try {
-            // Update ticket status to CLOSED
+            // 1. Update TICKET to CLOSED
             DB::table('tickets')
                 ->where('ID', $ticket->ID)
                 ->update([
@@ -1282,7 +1362,13 @@ class TicketingController extends Controller
                     'UPDATED_AT' => now(),
                 ]);
 
-            // Log workflow action
+            // 2. Update PROJECT to CLOSED via ProjectController
+            if ($ticket->PROJECT_NAME) {
+                $projectController = new ProjectController();
+                $projectController->updateToDeployed($ticket->PROJECT_NAME, $userId);
+            }
+
+            // 3. Log workflow action
             $this->logWorkflowAction(
                 $ticket->ID,
                 self::WORKFLOW_CLOSED,
@@ -1291,7 +1377,7 @@ class TicketingController extends Controller
                 ['rating' => $validated['rating'] ?? null]
             );
 
-            // Log ticket history
+            // 4. Log ticket history
             $this->logTicketHistory(
                 $ticket->ID,
                 'CLOSURE',
@@ -1301,12 +1387,12 @@ class TicketingController extends Controller
                 $userId
             );
 
-            // Insert remark
+            // 5. Insert remark
             $this->insertRemark(
                 $ticket->ID,
                 $userId,
                 'CLOSURE',
-                $validated['remarks'],
+                $validated['remarks'] ?? 'Ticket closed',
                 $ticket->STATUS,
                 self::STATUS_CLOSED,
                 null,
@@ -1318,14 +1404,16 @@ class TicketingController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Ticket closed successfully'
+                'message' => 'Ticket closed successfully. Project moved to Closed status.',
+                'ticket_id' => $ticket->TICKET_ID,
+                'project_status' => 'Closed',
+                'rating' => $validated['rating'] ?? null
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Closure failed: ' . $e->getMessage()], 500);
         }
     }
-
 
     /**
      * Handle ticket return (send back to requestor for clarification)
@@ -2066,14 +2154,11 @@ class TicketingController extends Controller
         return false;
     }
 
-    /**
-     * Handle DH Approval
-     */
     public function approveDH(Request $request, $ticketId)
     {
         $ticket = DB::selectOne('
-            SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
-            FROM tickets 
+            SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST, PROJECT_NAME
+            FROM tickets
             WHERE TICKET_ID = ? AND DELETED_AT IS NULL
         ', [$ticketId]);
 
@@ -2081,49 +2166,71 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Ticket not found'], 404);
         }
 
+        if ($ticket->STATUS !== self::STATUS_TRIAGED) {
+            return response()->json(['error' => 'Only triaged tickets can be approved'], 400);
+        }
+
+        if (!$ticket->PROJECT_NAME) {
+            return response()->json(['error' => 'Project not found'], 400);
+        }
+
         $currentUser = session('emp_data');
 
-        $this->logWorkflowAction(
-            $ticket->ID,
-            self::WORKFLOW_DH_APPROVED,
-            $currentUser['emp_id'],
-            $request->input('remarks')
-        );
+        DB::beginTransaction();
+        try {
+            // 1. Update TICKET to APPROVED
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update([
+                    'STATUS' => self::STATUS_TRIAGED,
+                    'UPDATED_AT' => now(),
+                ]);
 
-        $transitioned = $this->checkAndTransitionAfterApproval(
-            $ticket->ID,
-            $ticket->TYPE_OF_REQUEST
-        );
+            // 2. Update PROJECT to READY
+            $projectController = new ProjectController();
+            $projectController->updateToReady($ticket->PROJECT_NAME, 'DH_APPROVED', $currentUser['emp_id']);
 
-        $this->insertRemark(
-            $ticket->ID,
-            $currentUser['emp_id'],
-            'APPROVAL',
-            $request->input('remarks') ?? 'Approved by Department Head',
-            $ticket->STATUS,
-            $transitioned ? self::STATUS_APPROVED : $ticket->STATUS
-        );
+            // 3. Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_DH_APPROVED,
+                $currentUser['emp_id'],
+                $request->input('remarks') ?? 'Approved by Department Head'
+            );
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Department Head approval recorded',
-            'status_changed' => $transitioned,
-            'next_step' => $this->getPendingAction(
-                $transitioned ? self::STATUS_APPROVED : self::STATUS_TRIAGED,
-                $ticket->TYPE_OF_REQUEST,
-                $ticket->ID
-            )
-        ]);
+            // 4. Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'APPROVAL',
+                $request->input('remarks') ?? 'Approved by Department Head',
+                self::STATUS_TRIAGED,
+                self::STATUS_APPROVED
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket approved by Department Head. Project moved to Ready status.',
+                'ticket_id' => $ticket->TICKET_ID,
+                'project_status' => 'Ready',
+                'next_step' => 'Ready for assignment to programmer(s)'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Approval failed: ' . $e->getMessage()], 500);
+        }
     }
 
     /**
-     * Handle OD Approval
+     * Handle OD Approval - moves PROJECT to READY
      */
     public function approveOD(Request $request, $ticketId)
     {
         $ticket = DB::selectOne('
-            SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
-            FROM tickets 
+            SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST, PROJECT_NAME
+            FROM tickets
             WHERE TICKET_ID = ? AND DELETED_AT IS NULL
         ', [$ticketId]);
 
@@ -2131,34 +2238,58 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Ticket not found'], 404);
         }
 
+        if ($ticket->STATUS !== self::STATUS_TRIAGED) {
+            return response()->json(['error' => 'Only triaged tickets can be approved'], 400);
+        }
+
+        if (!$ticket->PROJECT_NAME) {
+            return response()->json(['error' => 'Project not found'], 400);
+        }
+
         $currentUser = session('emp_data');
 
-        $this->logWorkflowAction(
-            $ticket->ID,
-            self::WORKFLOW_OD_APPROVED,
-            $currentUser['emp_id'],
-            $request->input('remarks')
-        );
+        DB::beginTransaction();
+        try {
+            // 1. Update TICKET to APPROVED
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update(['STATUS' => self::STATUS_APPROVED]);
 
-        DB::table('tickets')
-            ->where('ID', $ticket->ID)
-            ->update(['STATUS' => self::STATUS_APPROVED]);
+            // 2. Update PROJECT to READY
+            $projectController = new ProjectController();
+            $projectController->updateToReady($ticket->PROJECT_NAME, 'OD_APPROVED', $currentUser['emp_id']);
 
-        $this->insertRemark(
-            $ticket->ID,
-            $currentUser['emp_id'],
-            'APPROVAL',
-            $request->input('remarks') ?? 'Approved by Operations Director',
-            self::STATUS_TRIAGED,
-            self::STATUS_APPROVED
-        );
+            // 3. Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_OD_APPROVED,
+                $currentUser['emp_id'],
+                $request->input('remarks') ?? 'Approved by Operations Director'
+            );
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Operations Director approval recorded',
-            'status_changed' => true,
-            'next_step' => 'Ready for assignment by MIS Supervisor'
-        ]);
+            // 4. Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'APPROVAL',
+                $request->input('remarks') ?? 'Approved by Operations Director',
+                self::STATUS_TRIAGED,
+                self::STATUS_APPROVED
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket approved by Operations Director. Project moved to Ready status.',
+                'ticket_id' => $ticket->TICKET_ID,
+                'project_status' => 'Ready',
+                'next_step' => 'Ready for assignment to programmer(s)'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Approval failed: ' . $e->getMessage()], 500);
+        }
     }
 
     /**

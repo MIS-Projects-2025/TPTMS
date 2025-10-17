@@ -136,12 +136,12 @@ export default function ActivityTimeline({
                                                 <span className="badge badge-ghost badge-sm">
                                                     {remark.REMARK_TYPE}
                                                 </span>
-                                                {remark.IS_INTERNAL && (
+                                                {/* {remark.IS_INTERNAL && (
                                                     <span className="badge badge-warning badge-sm gap-1">
                                                         <Lock className="w-3 h-3" />
                                                         Internal
                                                     </span>
-                                                )}
+                                                )} */}
                                                 <div className="flex items-center gap-1 text-xs text-base-content/60 ml-auto">
                                                     <Clock className="w-3 h-3" />
                                                     {item.timestamp.toLocaleString()}
