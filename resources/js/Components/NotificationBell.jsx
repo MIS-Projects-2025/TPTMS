@@ -26,25 +26,20 @@ export default function NotificationBell() {
         <div className="dropdown dropdown-end">
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="btn btn-ghost btn-circle indicator hover:bg-base-200 dark:hover:bg-base-700 transition-colors"
+                className="btn btn-ghost btn-circle indicator hover:bg-base-200 transition-colors"
             >
                 {unreadCount > 0 && (
-                    <span className="indicator-item badge badge-sm badge-error text-white font-bold">
+                    <span className="indicator-item badge badge-sm badge-error">
                         {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                 )}
-                <Bell
-                    size={24}
-                    className="text-base-content dark:text-base-50"
-                />
+                <Bell size={24} />
             </button>
 
             {isOpen && (
-                <div className="dropdown-content card card-compact w-96 shadow-xl bg-base-100 dark:bg-base-800 border border-base-200 dark:border-base-700 p-0 rounded-lg z-50">
-                    <div className="p-4 border-b border-base-200 dark:border-base-700 flex justify-between items-center bg-base-50 dark:bg-base-700 rounded-t-lg">
-                        <h3 className="font-bold text-lg text-base-content dark:text-base-100">
-                            Notifications
-                        </h3>
+                <div className="dropdown-content card card-compact w-96 shadow-xl bg-base-100 border border-base-300 p-0 rounded-lg z-50">
+                    <div className="p-4 border-b border-base-300 flex justify-between items-center bg-base-200 rounded-t-lg">
+                        <h3 className="font-bold text-lg">Notifications</h3>
                         {unreadCount > 0 && (
                             <button
                                 onClick={() => {
@@ -60,7 +55,7 @@ export default function NotificationBell() {
 
                     <div className="overflow-y-auto flex-1 max-h-80">
                         {notifications.length === 0 ? (
-                            <div className="p-8 text-center text-base-500 dark:text-base-400">
+                            <div className="p-8 text-center text-base-content/50">
                                 <Bell
                                     size={32}
                                     className="mx-auto mb-2 opacity-30"
@@ -71,9 +66,9 @@ export default function NotificationBell() {
                             notifications.map((notif, index) => (
                                 <div
                                     key={notif.id}
-                                    className={`p-4 border-b border-base-200 dark:border-base-700 hover:bg-base-50 dark:hover:bg-base-700 transition-colors cursor-pointer group ${
+                                    className={`p-4 border-b border-base-300 hover:bg-base-200 transition-colors cursor-pointer group ${
                                         !notif.read_at
-                                            ? "bg-info/10 dark:bg-info/20 border-l-4 border-l-info"
+                                            ? "bg-info/20 border-l-4 border-l-info"
                                             : ""
                                     } ${
                                         index === notifications.length - 1
@@ -83,21 +78,21 @@ export default function NotificationBell() {
                                 >
                                     <div className="flex justify-between items-start gap-3">
                                         <div className="flex-1">
-                                            <p className="font-semibold text-sm text-base-content dark:text-base-100">
+                                            <p className="font-semibold text-sm">
                                                 {notif.ticket_id}
                                             </p>
-                                            <p className="text-sm text-base-700 dark:text-base-300 mt-1 line-clamp-2">
+                                            <p className="text-sm text-base-content/70 mt-1 line-clamp-2">
                                                 {notif.message}
                                             </p>
                                             {notif.project && (
-                                                <p className="text-xs text-base-500 dark:text-base-400 mt-2">
+                                                <p className="text-xs text-base-content/60 mt-2">
                                                     <span className="font-semibold">
                                                         Project:
                                                     </span>{" "}
                                                     {notif.project}
                                                 </p>
                                             )}
-                                            <p className="text-xs text-base-400 dark:text-base-500 mt-2">
+                                            <p className="text-xs text-base-content/50 mt-2">
                                                 {formatDate(notif.created_at)}
                                             </p>
                                         </div>
@@ -106,7 +101,7 @@ export default function NotificationBell() {
                                                 onClick={() =>
                                                     markAsRead(notif.id)
                                                 }
-                                                className="btn btn-ghost btn-xs btn-circle hover:bg-primary hover:text-primary-content dark:hover:bg-primary dark:hover:text-primary-content opacity-0 group-hover:opacity-100 transition-opacity"
+                                                className="btn btn-ghost btn-xs btn-circle hover:bg-primary hover:text-primary-content opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                                                 title="Mark as read"
                                             >
                                                 <Check size={16} />

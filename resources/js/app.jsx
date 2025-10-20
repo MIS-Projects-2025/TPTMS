@@ -6,6 +6,7 @@ import { createInertiaApp } from "@inertiajs/react";
 import { resolvePageComponent } from "laravel-vite-plugin/inertia-helpers";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import { ThemeProvider, ThemeContext } from "../js/Components/ThemeContext";
+import { NotificationProvider } from "./Context/NotificationContext";
 
 const rawAppName = import.meta.env.VITE_APP_NAME || "Laravel";
 const appName = rawAppName
@@ -32,7 +33,11 @@ createInertiaApp({
                                         : antdTheme.defaultAlgorithm,
                             }}
                         >
-                            <App {...props} />
+                            <NotificationProvider
+                                userId={props.emp_data?.emp_id}
+                            >
+                                <App {...props} />
+                            </NotificationProvider>
                         </ConfigProvider>
                     )}
                 </ThemeContext.Consumer>

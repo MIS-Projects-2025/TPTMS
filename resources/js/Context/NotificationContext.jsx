@@ -12,25 +12,22 @@ const NotificationContext = createContext();
 export function NotificationProvider({ children, userId }) {
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
-    const [loading, setLoading] = useState(false);
-    const lastFetchRef = useRef(null);
+    const loadingRef = useRef(false);
 
     /** Merge notifications and remove duplicates by ID */
     const mergeNotifications = (prev, newNotifs) => {
         const combined = [...newNotifs, ...prev];
         const uniqueMap = new Map();
-        combined.forEach((notif) => {
-            uniqueMap.set(notif.id, notif);
-        });
+        combined.forEach((notif) => uniqueMap.set(notif.id, notif));
         return Array.from(uniqueMap.values());
     };
 
     /** Fetch notifications from API */
     const fetchNotifications = useCallback(async () => {
-        if (loading) return;
+        if (loadingRef.current) return;
 
+        loadingRef.current = true;
         try {
-            setLoading(true);
             const response = await fetch("/api/notifications");
             const data = await response.json();
 
@@ -39,14 +36,12 @@ export function NotificationProvider({ children, userId }) {
                 setUnreadCount(merged.filter((n) => !n.read_at).length);
                 return merged;
             });
-
-            lastFetchRef.current = Date.now();
         } catch (error) {
             console.error("Error fetching notifications:", error);
         } finally {
-            setLoading(false);
+            loadingRef.current = false;
         }
-    }, [loading]);
+    }, []);
 
     /** Fetch on component mount */
     useEffect(() => {
@@ -81,8 +76,9 @@ export function NotificationProvider({ children, userId }) {
                             : n
                     )
                 );
+
                 setUnreadCount(
-                    (prev) =>
+                    (prevCount) =>
                         notifications.filter(
                             (n) => n.id !== notificationId && !n.read_at
                         ).length

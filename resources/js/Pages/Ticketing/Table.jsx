@@ -22,6 +22,7 @@ import {
 import { usePage, router } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import StatCard from "./StatCard";
+import { useNotifications } from "@/Context/NotificationContext";
 
 export default function TicketTable() {
     const { tickets, pagination, projects, statusCounts, filters } =
@@ -29,6 +30,37 @@ export default function TicketTable() {
     const [loading, setLoading] = useState(false);
     const searchTimeoutRef = useRef(null);
     const [searchValue, setSearchValue] = useState(filters?.search || "");
+    const { markAsRead, markAllAsRead, notifications } = useNotifications();
+    const prevNotificationsRef = useRef(notifications);
+
+    // Function to refresh tickets from server
+    const refreshTickets = () => {
+        router.reload({
+            only: ["tickets", "pagination", "statusCounts", "filters"],
+            preserveState: true,
+        });
+    };
+
+    // Watch for notification changes and refresh tickets
+    useEffect(() => {
+        if (
+            JSON.stringify(prevNotificationsRef.current) !==
+            JSON.stringify(notifications)
+        ) {
+            prevNotificationsRef.current = notifications;
+            refreshTickets();
+        }
+    }, [notifications]);
+
+    // Example: mark a notification as read and refresh tickets
+    const handleNotificationRead = async (notificationId) => {
+        await markAsRead(notificationId);
+    };
+
+    // Example: mark all notifications read
+    const handleAllNotificationsRead = async () => {
+        await markAllAsRead();
+    };
 
     // Determine active filter from status
     const getActiveFilter = () => {
