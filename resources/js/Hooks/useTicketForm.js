@@ -56,10 +56,20 @@ export const useTicketForm = ({
         }
     };
 
+    const handleProjectChange = (value) => {
+        onProjectChange(value);
+    };
+
+    const handleParentTicketChange = (value) => {
+        onParentTicketChange(value);
+    };
+
     return {
         filteredParentTickets,
         isNewSystem,
         isTesting,
         handleRequestTypeChange,
+        handleProjectChange,
+        handleParentTicketChange,
     };
 };
