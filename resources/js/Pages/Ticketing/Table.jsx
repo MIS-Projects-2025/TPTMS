@@ -1,9 +1,8 @@
-import React, { use } from "react";
-import { Table, Input, Space, Select, Tag, Empty, Dropdown } from "antd";
+import React, { useState, useEffect, useRef } from "react";
+import { Table, Input, Space, Select, Tag, Empty, Dropdown, Spin } from "antd";
 import {
     Search,
     Filter,
-    SortAsc,
     MoreVertical,
     Eye,
     Plus,
@@ -20,29 +19,154 @@ import {
     ToolOutlined,
     AppstoreOutlined,
 } from "@ant-design/icons";
-import { usePage } from "@inertiajs/react";
+import { usePage, router } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import StatCard from "./StatCard";
-import useTicketTable from "@/Hooks/useTicketTable";
 
 export default function TicketTable() {
-    const { tickets } = usePage().props;
-    console.log(usePage().props);
-    const {
-        searchText,
-        setSearchText,
-        selectedProject,
-        setSelectedProject,
-        sortOrder,
-        setSortOrder,
-        activeFilter,
-        setActiveFilter,
-        projects,
-        statusCounts,
-        filteredTickets,
-    } = useTicketTable(tickets);
+    const { tickets, pagination, projects, statusCounts, filters } =
+        usePage().props;
+    const [loading, setLoading] = useState(false);
+    const searchTimeoutRef = useRef(null);
+    const [searchValue, setSearchValue] = useState(filters?.search || "");
 
-    // 🔹 Handles Action Navigation
+    // Determine active filter from status
+    const getActiveFilter = () => {
+        if (filters?.status === "NEW,TRIAGED") return "active";
+        if (filters?.status === "IN_PROGRESS") return "in progress";
+        if (filters?.status === "CLOSED") return "closed";
+        if (filters?.status === "URGENT") return "urgent";
+        return "all";
+    };
+
+    const activeFilter = getActiveFilter();
+
+    // Update search value when filters change from URL
+    useEffect(() => {
+        setSearchValue(filters?.search || "");
+    }, [filters?.search]);
+
+    // Handle pagination and sorting changes
+    const handleTableChange = (paginationData, _, sorter) => {
+        setLoading(true);
+
+        const params = {
+            page: paginationData.current,
+            pageSize: paginationData.pageSize,
+            search: filters?.search || "",
+            project: filters?.project || "",
+            status: filters?.status || "",
+            sortField: sorter?.field || "created_at",
+            sortOrder: sorter?.order === "ascend" ? "asc" : "desc",
+        };
+
+        const encodedParams = btoa(JSON.stringify(params));
+
+        router.get(
+            route("tickets.datatable"),
+            { q: encodedParams },
+            {
+                onFinish: () => setLoading(false),
+            }
+        );
+    };
+
+    // Handle search with debounce
+    const handleSearch = (value) => {
+        setSearchValue(value);
+
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
+        }
+
+        searchTimeoutRef.current = setTimeout(() => {
+            setLoading(true);
+
+            const params = {
+                page: 1,
+                pageSize: pagination?.per_page || 10,
+                search: value,
+                project: filters?.project || "",
+                status: filters?.status || "",
+                sortField: filters?.sortField || "created_at",
+                sortOrder: filters?.sortOrder || "desc",
+            };
+
+            router.get(route("tickets.datatable"), params, {
+                onFinish: () => setLoading(false),
+            });
+        }, 500);
+    };
+
+    // Handle project filter
+    const handleProjectChange = (value) => {
+        setLoading(true);
+
+        const params = {
+            page: 1,
+            pageSize: pagination?.per_page || 10,
+            search: filters?.search || "",
+            project: value || "",
+            status: filters?.status || "",
+            sortField: filters?.sortField || "created_at",
+            sortOrder: filters?.sortOrder || "desc",
+        };
+
+        const encodedParams = btoa(JSON.stringify(params));
+
+        router.get(
+            route("tickets.datatable"),
+            { q: encodedParams },
+            {
+                onFinish: () => setLoading(false),
+            }
+        );
+    };
+
+    // Handle status filter via stat cards
+    const handleStatusFilter = (filterType) => {
+        setLoading(true);
+
+        let statusValue = "";
+        switch (filterType) {
+            case "active":
+                statusValue = "NEW,TRIAGED";
+                break;
+            case "in progress":
+                statusValue = "IN_PROGRESS";
+                break;
+            case "closed":
+                statusValue = "CLOSED";
+                break;
+            case "urgent":
+                statusValue = "URGENT";
+                break;
+            default:
+                statusValue = "";
+        }
+
+        const params = {
+            page: 1,
+            pageSize: pagination?.per_page || 10,
+            search: filters?.search || "",
+            project: filters?.project || "",
+            status: statusValue,
+            sortField: filters?.sortField || "created_at",
+            sortOrder: filters?.sortOrder || "desc",
+        };
+
+        const encodedParams = btoa(JSON.stringify(params));
+
+        router.get(
+            route("tickets.datatable"),
+            { q: encodedParams },
+            {
+                onFinish: () => setLoading(false),
+            }
+        );
+    };
+
+    // Handle action navigation
     const handleAction = (action, ticketId, record) => {
         if (action === "VIEW") {
             const hash = btoa(`${ticketId}:VIEW`);
@@ -67,16 +191,15 @@ export default function TicketTable() {
         window.location.href = route("tickets.view", hash);
     };
 
-    // 🔹 Check if ticket is open
+    // Check if ticket is open
     const isTicketOpen = (status) => {
-        const closedStatuses = ["In Progress"];
-        return closedStatuses.includes(status);
+        const openStatuses = ["In Progress"];
+        return openStatuses.includes(status);
     };
 
     const renderActions = (_, record) => {
-        const actions = Array.isArray(record.actions) ? record.actions : [];
+        const actions = Array.isArray(record?.actions) ? record.actions : [];
 
-        // Always available (View)
         const viewOption = {
             key: "view",
             label: (
@@ -88,8 +211,7 @@ export default function TicketTable() {
             onClick: () => handleAction("VIEW", record.ticket_id, record),
         };
 
-        // Create Child Ticket
-        const canCreateChild = isTicketOpen(record.status);
+        const canCreateChild = isTicketOpen(record?.status);
         const createChildOption = canCreateChild
             ? {
                   key: "create_child",
@@ -104,7 +226,6 @@ export default function TicketTable() {
               }
             : null;
 
-        // Workflow actions with icons
         const workflowOptions = actions
             .filter(
                 (action) =>
@@ -113,7 +234,6 @@ export default function TicketTable() {
                     action.trim() !== ""
             )
             .map((action) => {
-                // Define icons per action
                 const iconMap = {
                     assess: <Filter className="w-4 h-4 text-primary" />,
                     approve: <CheckCircle className="w-4 h-4 text-green-600" />,
@@ -140,14 +260,12 @@ export default function TicketTable() {
                 };
             });
 
-        // Combine all menu items (View always included)
         const allMenuItems = [
             viewOption,
             createChildOption,
             ...workflowOptions,
         ].filter(Boolean);
 
-        // ✅ If only 1 action → show it as a standalone button
         if (allMenuItems.length === 1) {
             return (
                 <button
@@ -160,7 +278,6 @@ export default function TicketTable() {
             );
         }
 
-        // ✅ If more than 1 → show ellipsis dropdown only
         return (
             <Dropdown
                 menu={{ items: allMenuItems }}
@@ -180,18 +297,21 @@ export default function TicketTable() {
             dataIndex: "ticket_id",
             key: "ticket_id",
             width: 120,
+            sorter: true,
         },
         {
             title: "Requestor",
             dataIndex: "emp_name",
             key: "emp_name",
             width: 150,
+            sorter: true,
         },
         {
             title: "Project",
             dataIndex: "project_name",
             key: "project_name",
             width: 150,
+            sorter: true,
         },
         {
             title: "Type",
@@ -225,6 +345,7 @@ export default function TicketTable() {
             dataIndex: "created_at",
             key: "created_at",
             width: 150,
+            sorter: true,
         },
         {
             title: "Actions",
@@ -236,54 +357,55 @@ export default function TicketTable() {
 
     return (
         <AuthenticatedLayout>
-            {/* --- Dashboard Stat Cards --- */}
+            {/* Stat Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <StatCard
                     title="All Tickets"
-                    value={statusCounts.all}
+                    value={statusCounts?.all || 0}
                     color="primary"
                     icon={AppstoreOutlined}
-                    onClick={setActiveFilter}
+                    onClick={() => handleStatusFilter("all")}
                     isActive={activeFilter === "all"}
                     filterType="all"
                 />
                 <StatCard
                     title="Active"
-                    value={statusCounts.active || 0}
+                    value={statusCounts?.active || 0}
                     color="info"
                     icon={ThunderboltOutlined}
-                    onClick={setActiveFilter}
+                    onClick={() => handleStatusFilter("active")}
                     isActive={activeFilter === "active"}
                     filterType="active"
                 />
                 <StatCard
                     title="Urgent"
-                    value={statusCounts.urgent || 0}
+                    value={statusCounts?.urgent || 0}
                     color="error"
                     icon={ExclamationCircleOutlined}
-                    onClick={setActiveFilter}
+                    onClick={() => handleStatusFilter("urgent")}
                     isActive={activeFilter === "urgent"}
                     filterType="urgent"
                 />
                 <StatCard
                     title="In Progress"
-                    value={statusCounts["in progress"] || 0}
+                    value={statusCounts?.["in progress"] || 0}
                     color="warning"
                     icon={ToolOutlined}
-                    onClick={setActiveFilter}
+                    onClick={() => handleStatusFilter("in progress")}
                     isActive={activeFilter === "in progress"}
                     filterType="in progress"
                 />
                 <StatCard
                     title="Closed"
-                    value={statusCounts.closed || 0}
+                    value={statusCounts?.closed || 0}
                     color="success"
                     icon={CheckCircleOutlined}
-                    onClick={setActiveFilter}
+                    onClick={() => handleStatusFilter("closed")}
                     isActive={activeFilter === "closed"}
                     filterType="closed"
                 />
             </div>
+
             <div className="p-6 bg-base-200 min-h-screen transition-all duration-300 border border-base-300 rounded-xl shadow-sm">
                 {/* Filters */}
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
@@ -292,8 +414,8 @@ export default function TicketTable() {
                         <input
                             type="text"
                             placeholder="Search tickets..."
-                            value={searchText}
-                            onChange={(e) => setSearchText(e.target.value)}
+                            value={searchValue}
+                            onChange={(e) => handleSearch(e.target.value)}
                             className="input input-bordered input-sm w-64"
                         />
                     </div>
@@ -303,27 +425,15 @@ export default function TicketTable() {
                             placeholder="Filter by Project"
                             allowClear
                             style={{ width: 180 }}
-                            onChange={setSelectedProject}
-                            value={selectedProject}
+                            onChange={handleProjectChange}
+                            value={filters?.project || undefined}
                         >
-                            {projects.map((p) => (
+                            {projects?.map((p) => (
                                 <Select.Option key={p} value={p}>
                                     {p}
                                 </Select.Option>
                             ))}
                         </Select>
-
-                        <button
-                            onClick={() =>
-                                setSortOrder((prev) =>
-                                    prev === "asc" ? "desc" : "asc"
-                                )
-                            }
-                            className="btn btn-outline btn-sm flex items-center gap-2"
-                        >
-                            <SortAsc className="w-4 h-4" />
-                            Sort ({sortOrder})
-                        </button>
 
                         <button className="btn btn-outline btn-sm flex items-center gap-2">
                             <Filter className="w-4 h-4" />
@@ -333,25 +443,33 @@ export default function TicketTable() {
                 </div>
 
                 {/* Table */}
-
-                {filteredTickets && filteredTickets.length > 0 ? (
-                    <Table
-                        columns={columns}
-                        dataSource={filteredTickets}
-                        rowKey={(record) => record.ticket_id}
-                        pagination={{ pageSize: 10 }}
-                        bordered
-                        size="middle"
-                        scroll={{ x: 1200 }}
-                        className="bg-base-100 rounded-xl shadow-md"
-                    />
-                ) : (
-                    <div className="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl shadow-md">
-                        <Empty
-                            description={`No ${activeFilter} tickets found`}
+                <Spin spinning={loading}>
+                    {tickets && tickets.length > 0 ? (
+                        <Table
+                            columns={columns}
+                            dataSource={tickets}
+                            rowKey={(record) => record.ticket_id}
+                            pagination={{
+                                current: pagination?.current_page || 1,
+                                pageSize: pagination?.per_page || 10,
+                                total: pagination?.total || 0,
+                                showSizeChanger: true,
+                                showQuickJumper: true,
+                                pageSizeOptions: ["10", "20", "50"],
+                            }}
+                            onChange={handleTableChange}
+                            bordered
+                            size="middle"
+                            scroll={{ x: 1200 }}
+                            className="bg-base-100 rounded-xl shadow-md"
+                            loading={loading}
                         />
-                    </div>
-                )}
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl shadow-md">
+                            <Empty description="No tickets found" />
+                        </div>
+                    )}
+                </Spin>
             </div>
         </AuthenticatedLayout>
     );

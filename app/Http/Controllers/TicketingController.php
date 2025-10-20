@@ -452,7 +452,28 @@ class TicketingController extends Controller
             Log::error('Stack trace: ' . $e->getTraceAsString());
             $errors[] = 'Ticket Error: ' . $e->getMessage();
         }
+        // ========== SEND NOTIFICATIONS ON TICKET CREATION ==========
+        if ($ticketSaved) {
+            try {
+                Log::info('=== STARTING NOTIFICATIONS ===');
 
+                $notificationService = new \App\Services\NotificationService();
+
+                $result = $notificationService->notifyTicketCreated(
+                    $ticketId,
+                    $validated['request_type'],
+                    $empData['emp_name'],
+                    $validated['details'],
+                    $projectName,
+                    $validated['assigned_to'] ?? null
+                );
+
+                Log::info('Notification result: ' . json_encode($result));
+            } catch (\Exception $notifyException) {
+                Log::error('NOTIFICATION ERROR: ' . $notifyException->getMessage());
+                Log::error('Stack trace: ' . $notifyException->getTraceAsString());
+            }
+        }
         // ========== CREATE PROJECT (Independent) - Only for NEW SYSTEM requests ==========
         if ($validated['request_type'] == self::REQUEST_NEW_SYSTEM) {
             try {
@@ -484,13 +505,17 @@ class TicketingController extends Controller
         // ========== RESPONSE ==========
         if ($ticketSaved && $projectCreated) {
             Log::info('=== TICKET CREATION COMPLETE (SUCCESS) ===');
+            $hash = base64_encode($ticketId . ':VIEW');
+
             return redirect()
-                ->route('tickets.view', $ticketId)
+                ->route('tickets.view', $hash)
                 ->with('success', 'Ticket created successfully! Ticket ID: ' . $ticketId . ($projId ? ' | Project ID: ' . $projId : ''));
         } elseif ($ticketSaved && !$projectCreated) {
             Log::info('=== TICKET SAVED BUT PROJECT FAILED ===');
+            $hash = base64_encode($ticketId . ':VIEW');
+
             return redirect()
-                ->route('tickets.view', $ticketId)
+                ->route('tickets.view', $hash)
                 ->with('warning', 'Ticket created successfully (ID: ' . $ticketId . ') but project creation failed. Error: ' . implode(' | ', $errors));
         } elseif (!$ticketSaved && $projectCreated) {
             Log::info('=== TICKET FAILED BUT PROJECT SAVED ===');
@@ -509,29 +534,63 @@ class TicketingController extends Controller
     public function getTicketsDataTable(Request $request)
     {
         $empData = session('emp_data');
+        if (!$empData) {
+            return redirect()->route('login');
+        }
+        $encoded = $request->input('q', '');
+        if ($encoded) {
+            $decodedParams = json_decode(base64_decode($encoded), true);
+            if (is_array($decodedParams)) {
+                $request->merge($decodedParams);
+            }
+        }
         $userRoles = $this->getUserAccountType($empData);
+        $userId = $empData['emp_id'];
 
-        // DataTable params
-        $search = $request->input('search.value');
-        $start = $request->input('start', 0);
-        $length = $request->input('length', 10);
-        $orderCol = $request->input('order.0.column', 0);
-        $orderDir = $request->input('order.0.dir', 'desc');
-        $columns = $request->input('columns', []);
+        // Pagination & sorting
+        $page = (int) $request->input('page', 1);
+        $pageSize = (int) $request->input('pageSize', 10);
+        $search = trim((string) $request->input('search', ''));
+        $sortField = (string) $request->input('sortField', 'created_at');
+        $sortOrder = (string) $request->input('sortOrder', 'desc');
+
+        // Filters
+        $status = $request->input('status', '');
+        $project = $request->input('project', '');
 
         $query = DB::table('tickets')->whereNull('DELETED_AT');
 
-        // Filter by status/project
-        if ($request->filled('status')) {
-            $query->where('STATUS', $request->input('status'));
-        }
-        if ($request->filled('project')) {
-            $query->where('PROJECT_NAME', $request->input('project'));
+        /** 🟦 Filter by status */
+        if ($status) {
+            $statusMap = [
+                'NEW' => self::STATUS_NEW,
+                'TRIAGED' => self::STATUS_TRIAGED,
+                'APPROVED' => self::STATUS_APPROVED,
+                'IN_PROGRESS' => self::STATUS_IN_PROGRESS,
+                'RESOLVED' => self::STATUS_RESOLVED,
+                'CLOSED' => self::STATUS_CLOSED,
+                'REJECTED' => self::STATUS_REJECTED,
+                'ON_HOLD' => self::STATUS_ON_HOLD,
+                'URGENT' => self::STATUS_NEW, // adjust if you track priority separately
+            ];
+
+            $statusValues = collect(explode(',', strtoupper($status)))
+                ->map(fn($s) => $statusMap[$s] ?? null)
+                ->filter()
+                ->values()
+                ->toArray();
+
+            if (!empty($statusValues)) {
+                $query->whereIn('STATUS', $statusValues);
+            }
         }
 
-        $userId = $empData['emp_id'];
+        /** 🟦 Filter by project */
+        if ($project) {
+            $query->where('PROJECT_NAME', $project);
+        }
 
-        // Get approver tickets
+        /** 🟦 Role-based ticket visibility */
         $approverIds = [];
         if (in_array('DEPARTMENT_HEAD', $userRoles)) {
             $approverIds = DB::connection('masterlist')
@@ -541,19 +600,15 @@ class TicketingController extends Controller
                 ->toArray();
         }
 
-        // Get tickets where user is assigned as tester
         $testerTicketIds = DB::table('ticket_testers')
             ->where('TESTER_ID', $userId)
             ->whereNull('DELETED_AT')
             ->pluck('TICKET_ID')
             ->toArray();
 
-        // Apply role-based filters
         $query->where(function ($q) use ($userRoles, $userId, $approverIds, $testerTicketIds) {
             if (in_array('PROGRAMMER', $userRoles) || in_array('MIS_SUPERVISOR', $userRoles)) {
                 $q->orWhereIn('STATUS', [self::STATUS_NEW]);
-
-                // Also include TRIAGED tickets that were resubmitted after being returned
                 $q->orWhereIn('ID', function ($sub) use ($userId) {
                     $sub->select('TICKET_ID')
                         ->from('ticket_workflow')
@@ -567,33 +622,27 @@ class TicketingController extends Controller
                 });
             }
 
-            // Department head: only tickets of employees they approve
             if (in_array('DEPARTMENT_HEAD', $userRoles) && !empty($approverIds)) {
                 $q->orWhereIn('EMPLOYID', $approverIds);
             }
 
-            // OD sees all tickets
             if (in_array('OD', $userRoles)) {
-                $q->orWhereRaw('1 = 1'); // no filter
+                $q->orWhereRaw('1=1');
             }
 
             if (in_array('MIS_SUPERVISOR', $userRoles)) {
-                $q->orWhere('STATUS', 3);
+                $q->orWhere('STATUS', self::STATUS_APPROVED);
             }
 
-            // Always include requestor's own tickets
-            $q->orWhere('EMPLOYID', $userId);
+            $q->orWhere('EMPLOYID', $userId)
+                ->orWhere('ASSIGNED_TO', $userId);
 
-            // Include tickets assigned to user as programmer
-            $q->orWhere('ASSIGNED_TO', $userId);
-
-            // Include tickets where user is assigned as tester
             if (!empty($testerTicketIds)) {
                 $q->orWhereIn('tickets.ID', $testerTicketIds);
             }
         });
 
-        // Global search
+        /** 🟦 Search */
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('TICKET_ID', 'like', "%{$search}%")
@@ -602,73 +651,50 @@ class TicketingController extends Controller
             });
         }
 
-        // Sorting
-        $orderBy = $columns[$orderCol]['data'] ?? 'CREATED_AT';
-        $query->orderBy($orderBy, $orderDir);
-
+        /** 🟦 Count before pagination */
         $total = $query->count();
-        $tickets = $query->offset($start)->limit($length)->get();
 
-        // Map actions
-        $data = [];
-        foreach ($tickets as $ticket) {
+        /** 🟦 Sorting */
+        $columnMap = [
+            'ticket_id' => 'TICKET_ID',
+            'emp_name' => 'EMPNAME',
+            'project_name' => 'PROJECT_NAME',
+            'created_at' => 'CREATED_AT',
+        ];
+        $query->orderBy($columnMap[$sortField] ?? 'CREATED_AT', $sortOrder);
+
+        /** 🟦 Paginate */
+        $tickets = $query->forPage($page, $pageSize)->get();
+
+        /** 🟦 Map ticket actions */
+        $data = $tickets->map(function ($ticket) use ($testerTicketIds, $empData, $userRoles) {
             $actions = [];
-
-            $userId = $empData['emp_id'];
-
-            // Check if user is a tester for this ticket
-            $isTester = in_array($ticket->ID, $testerTicketIds);
-
-            // Check if the ticket was previously returned
             $wasReturned = DB::table('ticket_workflow')
                 ->where('TICKET_ID', $ticket->ID)
                 ->where('ACTION_TYPE', self::WORKFLOW_RETURNED)
                 ->exists();
 
-            // Assess action logic (programmers)
-            if ($this->canPerformAction($ticket, 'ASSESS', $empData, $userRoles)) {
-                if (
-                    $ticket->STATUS == self::STATUS_NEW ||
-                    ($ticket->STATUS == self::STATUS_TRIAGED && $wasReturned)
-                ) {
-                    $actions[] = 'Assess';
+            if (
+                $this->canPerformAction($ticket, 'ASSESS', $empData, $userRoles)
+                && ($ticket->STATUS == self::STATUS_NEW || ($ticket->STATUS == self::STATUS_TRIAGED && $wasReturned))
+            ) {
+                $actions[] = 'Assess';
+            }
+
+            foreach (['DH_APPROVE', 'OD_APPROVE', 'ASSIGN', 'RESOLVE', 'CLOSE', 'RESUBMIT'] as $actionType) {
+                if ($this->canPerformAction($ticket, $actionType, $empData, $userRoles)) {
+                    $actions[] = ucfirst(strtolower(str_replace('_', ' ', $actionType)));
                 }
             }
 
-            // Approvals
-            if ($this->canPerformAction($ticket, 'DH_APPROVE', $empData, $userRoles)) {
-                $actions[] = 'Approve';
-            }
-            if ($this->canPerformAction($ticket, 'OD_APPROVE', $empData, $userRoles)) {
-                $actions[] = 'Approve';
-            }
-
-            // Assign
-            if ($this->canPerformAction($ticket, 'ASSIGN', $empData, $userRoles)) {
-                $actions[] = 'Assign';
-            }
-
-            // Resolve
-            if ($this->canPerformAction($ticket, 'RESOLVE', $empData, $userRoles)) {
-                $actions[] = 'Resolve';
-            }
-
-            // Close
-            if ($this->canPerformAction($ticket, 'CLOSE', $empData, $userRoles)) {
-                $actions[] = 'Close';
-            }
-
-            // Test action for testers
-            if ($isTester && in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_TRIAGED, self::STATUS_RESOLVED])) {
+            if (
+                in_array($ticket->ID, $testerTicketIds) &&
+                in_array($ticket->STATUS, [self::STATUS_NEW, self::STATUS_TRIAGED, self::STATUS_RESOLVED])
+            ) {
                 $actions[] = 'Test';
             }
 
-            if ($this->canPerformAction($ticket, 'RESUBMIT', $empData, $userRoles)) {
-                $actions[] = 'Resubmit';
-            }
-
-
-            $data[] = [
+            return [
                 'ticket_id' => $ticket->TICKET_ID,
                 'employid' => $ticket->EMPLOYID,
                 'emp_name' => $ticket->EMPNAME,
@@ -677,18 +703,38 @@ class TicketingController extends Controller
                 'status' => $this->getStatusLabel($ticket->STATUS),
                 'created_at' => $ticket->CREATED_AT,
                 'actions' => $actions,
-                'is_tester' => $isTester, // Flag to indicate if user is a tester
+                'is_tester' => in_array($ticket->ID, $testerTicketIds),
             ];
-        }
+        });
+
+        /** 🟦 Dropdowns */
+        $projects = DB::table('tickets')
+            ->whereNull('DELETED_AT')
+            ->distinct()
+            ->pluck('PROJECT_NAME')
+            ->toArray();
+
+        $statusCounts = [
+            'all' => DB::table('tickets')->whereNull('DELETED_AT')->count(),
+            'active' => DB::table('tickets')->whereNull('DELETED_AT')->whereIn('STATUS', [self::STATUS_NEW, self::STATUS_TRIAGED])->count(),
+            'in progress' => DB::table('tickets')->whereNull('DELETED_AT')->where('STATUS', self::STATUS_IN_PROGRESS)->count(),
+            'closed' => DB::table('tickets')->whereNull('DELETED_AT')->where('STATUS', self::STATUS_CLOSED)->count(),
+        ];
 
         return Inertia::render('Ticketing/Table', [
             'tickets' => $data,
-            'recordsTotal' => $total,
-            'recordsFiltered' => $total,
-            'draw' => intval($request->input('draw')),
-            'filters' => $request->all(),
-        ]);
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $pageSize,
+                'total' => $total,
+                'last_page' => (int) ceil($total / $pageSize),
+            ],
+            'projects' => $projects,
+            'statusCounts' => $statusCounts,
+            'filters' => compact('search', 'project', 'status', 'sortField', 'sortOrder'),
+        ])->with('flash', ['message' => 'Tickets loaded successfully']);
     }
+
     /**
      * Get employee names from masterlist database
      * Returns array with EMPLOYID as key and EMPNAME as value
@@ -1169,7 +1215,22 @@ class TicketingController extends Controller
                 $assignedToString,
                 false
             );
+            // ========== SEND NOTIFICATION ON ASSIGNMENT ==========
+            try {
+                $notificationService = new \App\Services\NotificationService();
 
+                $result = $notificationService->notifyTicketAssigned(
+                    $ticket->TICKET_ID,
+                    $ticket->TYPE_OF_REQUEST,
+                    $assignedToString,
+                    $currentUser['emp_name'],
+                    $ticket->PROJECT_NAME
+                );
+
+                Log::info('Assignment notifications sent: ' . json_encode($result));
+            } catch (\Exception $notifyException) {
+                Log::warning('Notification error in assignment: ' . $notifyException->getMessage());
+            }
             DB::commit();
 
             return response()->json([
@@ -1274,7 +1335,27 @@ class TicketingController extends Controller
                 null,
                 false
             );
+            // ========== SEND NOTIFICATION ON RESOLUTION ==========
+            try {
+                $notificationService = new \App\Services\NotificationService();
 
+                // Get full ticket data
+                $ticketFull = DB::selectOne('
+        SELECT EMPLOYID, PROJECT_NAME FROM tickets WHERE ID = ?
+    ', [$ticket->ID]);
+
+                $result = $notificationService->notifyTicketResolved(
+                    $ticket->TICKET_ID,
+                    $ticket->TYPE_OF_REQUEST,
+                    $ticketFull->EMPLOYID,
+                    $currentUser['emp_name'],
+                    $ticketFull->PROJECT_NAME
+                );
+
+                Log::info('Resolution notifications sent: ' . json_encode($result));
+            } catch (\Exception $notifyException) {
+                Log::warning('Notification error in resolution: ' . $notifyException->getMessage());
+            }
             DB::commit();
 
             return response()->json([
@@ -2022,10 +2103,10 @@ class TicketingController extends Controller
     public function assessTicket(Request $request, $ticketId)
     {
         $ticket = DB::selectOne('
-            SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
-            FROM tickets 
-            WHERE TICKET_ID = ? AND DELETED_AT IS NULL
-        ', [$ticketId]);
+        SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST, PROJECT_NAME
+        FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
 
         if (!$ticket) {
             return response()->json(['error' => 'Ticket not found'], 404);
@@ -2067,6 +2148,30 @@ class TicketingController extends Controller
             self::STATUS_TRIAGED
         );
 
+        // ========== SEND NOTIFICATION ON ASSESSMENT ==========
+        try {
+            $notificationService = new \App\Services\NotificationService();
+
+            $ticketFull = DB::selectOne('
+            SELECT DEPARTMENT 
+            FROM tickets 
+            WHERE ID = ?
+        ', [$ticket->ID]);
+
+            $result = $notificationService->notifyAssessmentComplete(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $ticketFull->DEPARTMENT ?? null,
+                $currentUser['emp_name'],
+                $ticket->PROJECT_NAME ?? ''
+            );
+
+            Log::info('Assessment notifications sent: ' . json_encode($result));
+        } catch (\Exception $notifyException) {
+            Log::warning('Notification error in assessment: ' . $notifyException->getMessage());
+        }
+
+        // ===== RETURN RESPONSE =====
         return response()->json([
             'success' => true,
             'message' => 'Ticket assessed successfully',
@@ -2207,7 +2312,21 @@ class TicketingController extends Controller
                 self::STATUS_TRIAGED,
                 self::STATUS_APPROVED
             );
+            // ========== SEND NOTIFICATION ON DH APPROVAL ==========
+            try {
+                $notificationService = new \App\Services\NotificationService();
 
+                $result = $notificationService->notifyDHApproved(
+                    $ticket->TICKET_ID,
+                    $ticket->TYPE_OF_REQUEST,
+                    $currentUser['emp_name'],
+                    $ticket->PROJECT_NAME
+                );
+
+                Log::info('DH approval notifications sent: ' . json_encode($result));
+            } catch (\Exception $notifyException) {
+                Log::warning('Notification error in DH approval: ' . $notifyException->getMessage());
+            }
             DB::commit();
 
             return response()->json([
@@ -2276,7 +2395,21 @@ class TicketingController extends Controller
                 self::STATUS_TRIAGED,
                 self::STATUS_APPROVED
             );
+            // ========== SEND NOTIFICATION ON OD APPROVAL ==========
+            try {
+                $notificationService = new \App\Services\NotificationService();
 
+                $result = $notificationService->notifyODApproved(
+                    $ticket->TICKET_ID,
+                    $ticket->TYPE_OF_REQUEST,
+                    $currentUser['emp_name'],
+                    $ticket->PROJECT_NAME
+                );
+
+                Log::info('OD approval notifications sent: ' . json_encode($result));
+            } catch (\Exception $notifyException) {
+                Log::warning('Notification error in OD approval: ' . $notifyException->getMessage());
+            }
             DB::commit();
 
             return response()->json([

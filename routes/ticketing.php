@@ -21,6 +21,7 @@ Route::prefix($app_name)->group(function () {
     Route::post('/tickets', [TicketingController::class, 'store'])->name('tickets.store');
     Route::get('/tickets/datatable', [TicketingController::class, 'getTicketsDataTable'])->name('tickets.datatable');
 
+
     Route::get('/tickets/{ticket}', [TicketingController::class, 'viewTicket'])->name('tickets.view');
 
     // Workflow Actions - Assessment Phase
