@@ -9,9 +9,10 @@ use Inertia\Inertia;
 $app_name = env('APP_NAME', '');
 
 Route::prefix($app_name)->group(function () {
-  Route::post("/setSession", [AuthenticationController::class, 'setSession'])->name('setSession');
+  // Route::post("/setSession", [AuthenticationController::class, 'setSession'])->name('setSession');
 
   Route::middleware(AuthMiddleware::class)->group(function () {
+    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     Route::get("/logout", [AuthenticationController::class, 'logout'])->name('logout');
   });
 

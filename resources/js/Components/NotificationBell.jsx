@@ -29,7 +29,7 @@ export default function NotificationBell() {
                 className="btn btn-ghost btn-circle indicator hover:bg-base-200 transition-colors"
             >
                 {unreadCount > 0 && (
-                    <span className="indicator-item badge badge-sm badge-error">
+                    <span className="indicator-item badge badge-xs badge-error">
                         {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                 )}
