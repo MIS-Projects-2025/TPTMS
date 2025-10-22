@@ -43,6 +43,7 @@ export default function NavLinks({ isSidebarOpen }) {
                 label="Tickets"
                 icon={<Ticket className="w-5 h-5" />}
                 links={ticketLinks}
+                isSidebarOpen={isSidebarOpen}
             />
             <SidebarLink
                 href={route("projects.list")}

@@ -128,9 +128,9 @@ export default function ProjectsTable() {
                         }}
                         bordered
                         size="middle"
-                        scroll={{ x: 1000 }}
+                        scroll={{ x: 1000, y: "65vh" }} // <-- set scroll max height
                         className="bg-base-100 rounded-xl shadow-md"
-                        onChange={handleTableChange} // ✅ added handler
+                        onChange={handleTableChange}
                     />
                 ) : (
                     <div className="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl shadow-md">

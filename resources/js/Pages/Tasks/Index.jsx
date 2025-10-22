@@ -1,19 +1,53 @@
 import React, { useState, useMemo } from "react";
 import { usePage } from "@inertiajs/react";
-import { Table, Card, Tag, Tooltip } from "antd";
-import { List, LayoutGrid } from "lucide-react";
+import { Table, Card, Tag } from "antd";
 import TaskLayout from "@/Layouts/TaskLayout";
 import TaskNavbar from "@/Components/TaskNavBar";
+import dayjs from "dayjs";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
+
+dayjs.extend(isSameOrAfter);
+dayjs.extend(isSameOrBefore);
 
 const TaskIndex = () => {
     const { tasks } = usePage().props;
+
+    // 🌐 Filter states
     const [isCardView, setIsCardView] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [sortKey, setSortKey] = useState(null);
-
-    // 🔍 Filter + Sort logic combined
+    const [selectedDates, setSelectedDates] = useState([dayjs(), dayjs()]);
+    const [selectedStatus, setSelectedStatus] = useState(null); // ✅ new status filter
+    // 🧹 Reset function
+    const handleResetFilters = () => {
+        setSelectedStatus(null);
+        const today = dayjs();
+        setSelectedDates([today.startOf("day"), today.endOf("day")]);
+    };
+    // 🔍 Filter + Sort combined
     const filteredTasks = useMemo(() => {
         let result = [...tasks];
+
+        // ✅ Filter by date
+        const today = dayjs();
+        const [start, end] =
+            selectedDates && selectedDates.length === 2
+                ? selectedDates
+                : [today.startOf("day"), today.endOf("day")];
+
+        result = result.filter((task) => {
+            const taskDate = dayjs(task.TASK_DATE);
+            return (
+                taskDate.isSameOrAfter(start, "day") &&
+                taskDate.isSameOrBefore(end, "day")
+            );
+        });
+
+        // ✅ Filter by status (if selected)
+        if (selectedStatus) {
+            result = result.filter((task) => task.STATUS === selectedStatus);
+        }
 
         // ✅ Search filter
         if (searchTerm) {
@@ -26,7 +60,7 @@ const TaskIndex = () => {
             );
         }
 
-        // 🔽 Sorting
+        // ✅ Sorting
         if (sortKey === "date") {
             result.sort(
                 (a, b) => new Date(b.TASK_DATE) - new Date(a.TASK_DATE)
@@ -38,7 +72,7 @@ const TaskIndex = () => {
         }
 
         return result;
-    }, [tasks, searchTerm, sortKey]);
+    }, [tasks, searchTerm, sortKey, selectedDates, selectedStatus]);
 
     const columns = [
         { title: "Task ID", dataIndex: "TASK_ID", key: "TASK_ID" },
@@ -69,19 +103,20 @@ const TaskIndex = () => {
         { title: "Date", dataIndex: "TASK_DATE", key: "TASK_DATE" },
     ];
 
-    // 🔄 Handlers passed to navbar
-    const handleSearch = (value) => setSearchTerm(value);
-    const handleSortChange = (value) => setSortKey(value);
-
     return (
-        <TaskLayout>
+        <TaskLayout
+            onFilterStatus={setSelectedStatus}
+            onResetFilters={handleResetFilters}
+        >
             <TaskNavbar
                 isCardView={isCardView}
                 toggleView={() => setIsCardView(!isCardView)}
-                onSearch={handleSearch}
-                onAddTask={() => console.log("Add new task")}
-                onSortChange={handleSortChange}
+                onSearch={setSearchTerm}
+                onSortChange={setSortKey}
+                onDateChange={setSelectedDates}
+                onResetFilters={handleResetFilters}
             />
+
             <div className="bg-base-100 rounded-xl shadow-md p-4">
                 {isCardView ? (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -113,7 +148,7 @@ const TaskIndex = () => {
                     <Table
                         dataSource={filteredTasks}
                         columns={columns}
-                        rowKey={(record) => record.TASK_ID}
+                        rowKey="TASK_ID"
                         bordered
                         pagination={{ pageSize: 10 }}
                         size="middle"

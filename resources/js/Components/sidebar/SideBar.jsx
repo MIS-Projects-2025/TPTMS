@@ -46,7 +46,7 @@ export default function Sidebar() {
                     }
                     md:translate-x-0
                     flex flex-col min-h-screen
-                    ${isSidebarOpen ? "w-[270px]" : "w-[80px]"}
+                    ${isSidebarOpen ? "w-[240px]" : "w-[80px]"}
                     px-4 pb-6 pt-4
                     ${
                         theme === "light"
