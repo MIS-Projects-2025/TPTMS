@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { usePage, router } from "@inertiajs/react";
-import { Table, Spin, Empty, Tag } from "antd";
+import { Table, Spin, Empty, Tag, Avatar, Tooltip } from "antd";
+import { UserOutlined } from "@ant-design/icons";
 import ProjectLayout from "@/Layouts/ProjectLayout";
 import ProjectNavbar from "@/Components/ProjectNavbar";
 
@@ -22,7 +23,7 @@ export default function ProjectsTable() {
 
     // 🔍 Search handler
     const handleSearch = (value) => {
-        const updated = { ...filters, search: value, page: 1 }; // reset to page 1
+        const updated = { ...filters, search: value, page: 1 };
         setFilters(updated);
         setSearchValue(value);
 
@@ -78,14 +79,91 @@ export default function ProjectsTable() {
         );
     };
 
+    // Generate consistent color based on string
+    const getColorFromString = (str) => {
+        const colors = [
+            "#1890ff",
+            "#52c41a",
+            "#faad14",
+            "#f5222d",
+            "#722ed1",
+            "#eb2f96",
+            "#13c2c2",
+            "#fa8c16",
+        ];
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return colors[Math.abs(hash) % colors.length];
+    };
+
     const columns = [
-        { title: "Project Name", dataIndex: "name", key: "name" },
-        { title: "Description", dataIndex: "description", key: "description" },
-        { title: "Department", dataIndex: "department", key: "department" },
+        { title: "Project Name", dataIndex: "name", key: "name", width: 150 },
+        {
+            title: "Description",
+            dataIndex: "description",
+            key: "description",
+            width: 200,
+        },
+        {
+            title: "Department",
+            dataIndex: "department",
+            key: "department",
+            width: 120,
+        },
+        {
+            title: "Assigned To",
+            dataIndex: "assigned_to",
+            key: "assigned_to",
+            width: 50,
+            render: (assignedTo) => {
+                if (!assignedTo || assignedTo.length === 0) {
+                    return <span className="text-gray-400">Unassigned</span>;
+                }
+
+                // Only show the first 2 avatars
+                const visible = assignedTo.slice(0, 2);
+                const hidden = assignedTo.slice(2); // rest of the people
+                const remaining = hidden.length;
+
+                // Combine initials of hidden people for tooltip
+                const hiddenInitials = hidden.map((p) => p.initials).join(", ");
+
+                return (
+                    <Avatar.Group maxCount={2} size="default">
+                        {visible.map((person) => (
+                            <Tooltip
+                                key={person.emp_id}
+                                title={person.fullName}
+                            >
+                                <Avatar
+                                    style={{
+                                        backgroundColor: getColorFromString(
+                                            person.emp_id
+                                        ),
+                                    }}
+                                >
+                                    {person.initials}
+                                </Avatar>
+                            </Tooltip>
+                        ))}
+                        {remaining > 0 && (
+                            <Tooltip title={hiddenInitials}>
+                                <Avatar style={{ backgroundColor: "#f56a00" }}>
+                                    +{remaining}
+                                </Avatar>
+                            </Tooltip>
+                        )}
+                    </Avatar.Group>
+                );
+            },
+        },
         {
             title: "Status",
             dataIndex: "status",
             key: "status",
+            width: 70,
             render: (status) => {
                 const colors = {
                     "Not Started": "default",
@@ -128,7 +206,7 @@ export default function ProjectsTable() {
                         }}
                         bordered
                         size="middle"
-                        scroll={{ x: 1000, y: "65vh" }} // <-- set scroll max height
+                        scroll={{ x: 1200, y: "65vh" }}
                         className="bg-base-100 rounded-xl shadow-md"
                         onChange={handleTableChange}
                     />

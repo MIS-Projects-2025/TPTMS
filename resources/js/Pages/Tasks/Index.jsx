@@ -1,7 +1,7 @@
 // Pages/TaskIndex.jsx
 import React from "react";
 import { usePage } from "@inertiajs/react";
-import { Table, Card, Tag } from "antd";
+import { Table, Card, Tag, Empty } from "antd";
 import TaskLayout from "@/Layouts/TaskLayout";
 import TaskNavbar from "@/Components/TaskNavBar";
 import { useTask } from "@/hooks/useTask";
@@ -103,6 +103,8 @@ const TaskIndex = () => {
                             </Card>
                         ))}
                     </div>
+                ) : filteredTasks.length === 0 ? (
+                    <Empty description="No tasks found." />
                 ) : (
                     <Table
                         dataSource={filteredTasks}

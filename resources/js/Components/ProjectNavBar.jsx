@@ -39,18 +39,18 @@ export default function ProjectNavbar({
                         </Option>
                     ))}
                 </Select>
-
+                {/* 
                 <Tooltip title="More Filters">
                     <button className="btn btn-sm btn-outline flex items-center gap-2">
                         <Filter className="w-4 h-4" /> Filters
                     </button>
-                </Tooltip>
+                </Tooltip> */}
 
-                <Tooltip title="Download Report">
+                {/* <Tooltip title="Download Report">
                     <button className="btn btn-sm btn-outline flex items-center gap-2">
                         <Download className="w-4 h-4" /> Export
                     </button>
-                </Tooltip>
+                </Tooltip> */}
             </div>
         </div>
     );

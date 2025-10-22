@@ -21,20 +21,6 @@ export default function ProjectLayout({ children }) {
                 </Link>
 
                 <div>
-                    <h2 className="font-semibold mb-3 text-sm uppercase text-gray-500">
-                        Filters
-                    </h2>
-                    <div className="space-y-2">
-                        <button className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start">
-                            <Filter className="w-4 h-4" />
-                            By Department
-                        </button>
-                        <button className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start">
-                            <Filter className="w-4 h-4" />
-                            By Status
-                        </button>
-                    </div>
-
                     <div className="mt-6 border-t border-base-300 pt-4">
                         <h2 className="font-semibold mb-3 text-sm uppercase text-gray-500">
                             Actions

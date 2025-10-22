@@ -30,6 +30,7 @@ class ProjectController extends Controller
         if (!$empData) {
             return redirect()->route('login');
         }
+
         $encoded = $request->input('q', '');
         if ($encoded) {
             $decodedParams = json_decode(base64_decode($encoded), true);
@@ -37,6 +38,7 @@ class ProjectController extends Controller
                 $request->merge($decodedParams);
             }
         }
+
         // Pagination & sorting
         $page = (int) $request->input('page', 1);
         $pageSize = (int) $request->input('pageSize', 10);
@@ -80,6 +82,7 @@ class ProjectController extends Controller
         $columnMap = [
             'name' => 'PROJ_NAME',
             'department' => 'PROJ_DEPT',
+            'assigned' => 'ASSIGNED_PROGS',
             'status' => 'PROJ_STATUS',
             'created_at' => 'CREATED_AT',
         ];
@@ -92,12 +95,47 @@ class ProjectController extends Controller
         $statusOptions = $this->getProjectStatusOptions();
 
         $data = $projects->map(function ($project) use ($statusOptions) {
+            // Parse assigned programmers
+            $assignedTo = [];
+            if (!empty($project->ASSIGNED_PROGS)) {
+                $empIds = array_filter(explode(',', $project->ASSIGNED_PROGS));
+
+                // Get employee names from masterlist
+                if (!empty($empIds)) {
+                    $employees = DB::connection('masterlist')
+                        ->table('employee_masterlist')
+                        ->whereIn('EMPLOYID', $empIds)
+                        ->select('EMPLOYID', 'FIRSTNAME', 'MIDDLE_INITIAL', 'LASTNAME')
+                        ->get();
+
+                    $assignedTo = $employees->map(function ($emp) {
+                        // Tooltip: Full name with middle initial (e.g., "Juan A Dela Cruz")
+                        $fullName = trim($emp->FIRSTNAME . ' ' . $emp->MIDDLE_INITIAL . ' ' . $emp->LASTNAME);
+                        // Get the first letter of first name
+                        $firstInitial = !empty($emp->FIRSTNAME) ? strtoupper(substr($emp->FIRSTNAME, 0, 1)) : '';
+
+                        // Get the first letter of last name
+                        $lastInitial = !empty($emp->LASTNAME) ? strtoupper(substr($emp->LASTNAME, 0, 1)) : '';
+
+                        // Combine initials
+                        $tableInitial = $firstInitial . $lastInitial;
+
+                        return [
+                            'emp_id' => $emp->EMPLOYID,
+                            'initials' => $tableInitial,
+                            'full_name' => $fullName
+                        ];
+                    })->toArray();
+                }
+            }
+
             return [
                 'id' => $project->PROJ_ID,
                 'name' => $project->PROJ_NAME,
                 'description' => $project->PROJ_DESC,
                 'department' => $project->PROJ_DEPT,
                 'status' => $statusOptions[$project->PROJ_STATUS] ?? 'Unknown',
+                'assigned_to' => $assignedTo,
                 'created_at' => $project->CREATED_AT,
             ];
         });
