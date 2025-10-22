@@ -15,7 +15,7 @@ class User extends Authenticatable
      */
     protected $connection = 'masterlist'; // 👈 your secondary DB connection name
     protected $table = 'employee_masterlist';
-    protected $primaryKey = 'ID';
+    protected $primaryKey = 'EMPLOYID';
     public $timestamps = false;
 
     /**

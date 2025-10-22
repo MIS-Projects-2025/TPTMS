@@ -30,37 +30,78 @@ export default function TicketTable() {
     const [loading, setLoading] = useState(false);
     const searchTimeoutRef = useRef(null);
     const [searchValue, setSearchValue] = useState(filters?.search || "");
-    const { markAsRead, markAllAsRead, notifications } = useNotifications();
-    const prevNotificationsRef = useRef(notifications);
+    const { markAsRead, markAllAsRead, notifications, unreadCount } =
+        useNotifications();
+    const prevNotificationCountRef = useRef(unreadCount);
 
     // Function to refresh tickets from server
     const refreshTickets = () => {
+        console.log("🔄 Refreshing tickets...");
         router.reload({
             only: ["tickets", "pagination", "statusCounts", "filters"],
             preserveState: true,
+            preserveScroll: true,
         });
     };
 
-    // Watch for notification changes and refresh tickets
+    // Smart refresh - only refresh for ticket-related notifications
     useEffect(() => {
-        if (
-            JSON.stringify(prevNotificationsRef.current) !==
-            JSON.stringify(notifications)
-        ) {
-            prevNotificationsRef.current = notifications;
-            refreshTickets();
+        // Only process when unread count increases (new notification arrived)
+        if (unreadCount > prevNotificationCountRef.current) {
+            const countDiff = unreadCount - prevNotificationCountRef.current;
+
+            // Get the new notifications (most recent ones)
+            const newNotifications = notifications.slice(0, countDiff);
+
+            console.log("📬 New notification(s) detected:", {
+                count: countDiff,
+                newNotifications,
+            });
+
+            // Check if any new notification is ticket-related
+            const hasTicketUpdate = newNotifications.some((notif) => {
+                // Parse the data field if it's a string
+                const data =
+                    typeof notif.data === "string"
+                        ? JSON.parse(notif.data)
+                        : notif.data;
+
+                // Check for ticket-related notification types
+                const ticketTypes = [
+                    "TICKET_CREATED",
+                    "TICKET_UPDATED",
+                    "TICKET_ASSIGNED",
+                    "TICKET_STATUS_CHANGED",
+                    "TICKET_RESOLVED",
+                    "TICKET_CLOSED",
+                ];
+
+                const isTicketNotification =
+                    (data?.type && ticketTypes.includes(data.type)) ||
+                    data?.ticket_id ||
+                    notif.type?.includes("Ticket");
+
+                console.log("🔍 Checking notification:", {
+                    notificationId: notif.id,
+                    type: data?.type || notif.type,
+                    isTicketRelated: isTicketNotification,
+                });
+
+                return isTicketNotification;
+            });
+
+            if (hasTicketUpdate) {
+                console.log(
+                    "🎫 Ticket-related notification detected! Refreshing table..."
+                );
+                refreshTickets();
+            } else {
+                console.log("ℹ️ Non-ticket notification, skipping refresh");
+            }
         }
-    }, [notifications]);
 
-    // Example: mark a notification as read and refresh tickets
-    const handleNotificationRead = async (notificationId) => {
-        await markAsRead(notificationId);
-    };
-
-    // Example: mark all notifications read
-    const handleAllNotificationsRead = async () => {
-        await markAllAsRead();
-    };
+        prevNotificationCountRef.current = unreadCount;
+    }, [unreadCount, notifications]);
 
     // Determine active filter from status
     const getActiveFilter = () => {
@@ -199,12 +240,37 @@ export default function TicketTable() {
     };
 
     // Handle action navigation
-    const handleAction = (action, ticketId, record) => {
+    const handleAction = async (action, ticketId, record) => {
+        try {
+            // 🔹 Find all unread notifications related to this ticket
+            const relatedNotifs = notifications.filter((notif) => {
+                const data =
+                    typeof notif.data === "string"
+                        ? JSON.parse(notif.data)
+                        : notif.data;
+
+                return (
+                    !notif.read_at &&
+                    (data?.ticket_id === ticketId ||
+                        notif.ticket_id === ticketId)
+                );
+            });
+
+            // 🔹 Mark them as read
+            for (const notif of relatedNotifs) {
+                await markAsRead(notif.id);
+            }
+        } catch (error) {
+            console.warn("⚠️ Failed to mark notifications as read:", error);
+        }
+
+        // 🔹 Continue with existing navigation logic
         if (action === "VIEW") {
             const hash = btoa(`${ticketId}:VIEW`);
             window.location.href = route("tickets.view", hash);
             return;
         }
+
         if (action === "CREATE_CHILD") {
             const parentEncoded = btoa(ticketId.toString());
             const projectEncoded = btoa(record.project_name || "");

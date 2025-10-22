@@ -12,7 +12,8 @@ $app_name = env('APP_NAME', '');
 
 
 Route::redirect('/', "/$app_name");
-
+// Required for private channel authentication
+// Broadcast::routes(['middleware' => ['web']]);
 
 // ------------------------------------------------------------------
 // 4️⃣ Include other route files

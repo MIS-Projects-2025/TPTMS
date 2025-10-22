@@ -12,6 +12,7 @@ const rawAppName = import.meta.env.VITE_APP_NAME || "Laravel";
 const appName = rawAppName
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/\b\w/g, (char) => char.toUpperCase());
+
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
     resolve: (name) =>
@@ -21,6 +22,14 @@ createInertiaApp({
         ),
     setup({ el, App, props }) {
         const root = createRoot(el);
+
+        // Get userId from shared props
+        const userId =
+            props.initialPage?.props?.emp_data?.emp_id ||
+            props.initialPage?.props?.auth?.emp_data?.emp_id;
+
+        console.log("App userId:", userId);
+
         root.render(
             <ThemeProvider>
                 <ThemeContext.Consumer>
@@ -33,9 +42,7 @@ createInertiaApp({
                                         : antdTheme.defaultAlgorithm,
                             }}
                         >
-                            <NotificationProvider
-                                userId={props.emp_data?.emp_id}
-                            >
+                            <NotificationProvider userId={userId}>
                                 <App {...props} />
                             </NotificationProvider>
                         </ConfigProvider>

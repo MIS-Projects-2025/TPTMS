@@ -3,11 +3,13 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Support\Facades\Log;
 
-class TicketApprovedNotification extends Notification implements ShouldQueue
+class TicketApprovedNotification extends Notification implements ShouldBroadcast
 {
     use Queueable;
 
@@ -26,7 +28,7 @@ class TicketApprovedNotification extends Notification implements ShouldQueue
 
     public function via($notifiable)
     {
-        return ['broadcast', 'database'];
+        return ['database', 'broadcast'];
     }
 
     public function toBroadcast($notifiable)
@@ -39,6 +41,7 @@ class TicketApprovedNotification extends Notification implements ShouldQueue
         };
 
         return new BroadcastMessage([
+            'id' => uniqid('notif_', true),
             'ticket_id' => $this->ticketId,
             'message' => "Ticket {$this->ticketId} has been {$approvalLabel}",
             'approved_by' => $this->approvedBy,
@@ -49,6 +52,24 @@ class TicketApprovedNotification extends Notification implements ShouldQueue
         ]);
     }
 
+    public function broadcastOn($notifiable = null)
+    {
+        if (!$notifiable) return [];
+
+        Log::info('Broadcasting approval to channel:', [
+            'channel' => 'users.' . $notifiable->emp_id,
+            'ticket_id' => $this->ticketId,
+            'approval_type' => $this->approvalType
+        ]);
+
+        return new PrivateChannel('users.' . $notifiable->emp_id);
+    }
+
+    public function broadcastAs()
+    {
+        return 'notification.created';
+    }
+
     public function toDatabase($notifiable)
     {
         return [
@@ -57,6 +78,7 @@ class TicketApprovedNotification extends Notification implements ShouldQueue
             'approval_type' => $this->approvalType,
             'project_name' => $this->projectName,
             'type' => 'TICKET_APPROVED',
+            'created_at' => now()->toDateTimeString(),
         ];
     }
 }

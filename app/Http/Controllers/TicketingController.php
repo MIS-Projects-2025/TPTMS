@@ -456,7 +456,12 @@ class TicketingController extends Controller
         if ($ticketSaved) {
             try {
                 Log::info('=== STARTING NOTIFICATIONS ===');
-
+                // Add debugging
+                Log::info('Notification sent', [
+                    'user_emp_id' => $empData['emp_id'],
+                    'channel' => 'users.' . $empData['emp_id'],
+                    'ticket_id' => $ticketId
+                ]);
                 $notificationService = new \App\Services\NotificationService();
 
                 $result = $notificationService->notifyTicketCreated(
@@ -2153,18 +2158,19 @@ class TicketingController extends Controller
             $notificationService = new \App\Services\NotificationService();
 
             $ticketFull = DB::selectOne('
-            SELECT DEPARTMENT 
-            FROM tickets 
-            WHERE ID = ?
-        ', [$ticket->ID]);
+    SELECT EMPLOYID, DEPARTMENT
+    FROM tickets
+    WHERE ID = ?
+', [$ticket->ID]);
 
             $result = $notificationService->notifyAssessmentComplete(
                 $ticket->TICKET_ID,
                 $ticket->TYPE_OF_REQUEST,
-                $ticketFull->DEPARTMENT ?? null,
+                $ticketFull->EMPLOYID ?? null,
                 $currentUser['emp_name'],
                 $ticket->PROJECT_NAME ?? ''
             );
+
 
             Log::info('Assessment notifications sent: ' . json_encode($result));
         } catch (\Exception $notifyException) {

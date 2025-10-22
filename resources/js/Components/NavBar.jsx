@@ -12,11 +12,10 @@ export default function NavBar() {
         router.get(route("logout"));
         window.location.href = `http://192.168.2.221/authify/public/logout?key=${encodeURIComponent(
             token
-        )}&redirect=${encodeURIComponent(window.location.href)}`;
+        )}&redirect=${encodeURIComponent(route("dashboard"))}`;
     };
-
     return (
-        <nav className="">
+        <nav className="mt-2">
             <div className="px-4 mx-auto sm:px-6 lg:px-8">
                 <div className="flex justify-end h-[50px] ">
                     <div className="items-center hidden mr-5 space-x-1 font-semibold md:flex">

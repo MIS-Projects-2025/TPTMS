@@ -1,33 +1,72 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 use App\Models\NotificationUser;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Http\Request;
+use App\Http\Middleware\AuthMiddleware; // Re-importing custom middleware
 
 function getCurrentUser()
 {
     $empData = session('emp_data');
-    // dd($empData);
     if (!$empData) {
         return null;
     }
 
-    // Use NotificationUser instead of User
-    $user = NotificationUser::where('emp_id', $empData['emp_id'])->first();
-
-    // Auto-create if doesn't exist
-    if (!$user) {
-        $user = NotificationUser::create([
-            'emp_id' => $empData['emp_id'],
+    // This logic ensures the local NotificationUser model is synced with the session data
+    return NotificationUser::firstOrCreate(
+        ['emp_id' => $empData['emp_id']],
+        [
             'emp_name' => $empData['emp_name'] ?? 'Unknown',
             'emp_dept' => $empData['emp_dept'] ?? 'Unknown',
-        ]);
-    }
-
-    return $user;
+        ]
+    );
 }
 
-// ========== API ROUTES WITH /api PREFIX ==========
-Route::prefix('api')->group(function () {
+Route::post('/TPTMS/broadcasting/auth', function (Request $request) {
+    try {
+        $empData = session('emp_data');
+        Log::info('Broadcast Auth Session:', ['emp_data' => $empData]);
+
+        $user = $empData ? \App\Models\NotificationUser::firstOrCreate(
+            ['emp_id' => $empData['emp_id']],
+            [
+                'emp_name' => $empData['emp_name'] ?? 'Unknown',
+                'emp_dept' => $empData['emp_dept'] ?? 'Unknown',
+            ]
+        ) : null;
+
+        if (!$user) {
+            Log::error('No user resolved for broadcast auth');
+            return response()->json(['error' => 'Unauthorized: session missing'], 403);
+        }
+
+        Log::info('Broadcast auth success for user:', ['emp_id' => $user->emp_id]);
+        Log::info('Broadcast auth session:', ['emp_data' => session('emp_data')]);
+        if (!$user) {
+            Log::warning('No user found for broadcast auth');
+        }
+
+        $request->setUserResolver(fn() => $user);
+
+        return Broadcast::auth($request);
+    } catch (\Throwable $e) {
+        Log::error('Broadcast auth exception', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+        return response()->json([
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ], 500);
+    }
+});
+
+
+
+// ========== PROTECTED API ROUTES (Protected by AuthMiddleware) ==========
+Route::prefix('api')->middleware(AuthMiddleware::class)->group(function () {
 
     // Get all unread notifications
     Route::get('/notifications', function () {

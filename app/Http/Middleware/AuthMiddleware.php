@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Models\NotificationUser;
 
 class AuthMiddleware
 {
@@ -43,6 +44,21 @@ class AuthMiddleware
                 'emp_station' => $currentUser->emp_station,
                 'generated_at' => $currentUser->generated_at,
             ]]);
+
+            // 5️⃣ Store NotificationUser for broadcasting
+            $user = NotificationUser::where('emp_id', $currentUser->emp_id)->first();
+            if (!$user) {
+                $user = NotificationUser::create([
+                    'emp_id' => $currentUser->emp_id,
+                    'emp_name' => $currentUser->emp_name,
+                    'emp_dept' => $currentUser->emp_dept,
+                ]);
+            }
+
+            // Set user for broadcasting authentication
+            $request->setUserResolver(function () use ($user) {
+                return $user;
+            });
         }
 
         return $next($request);

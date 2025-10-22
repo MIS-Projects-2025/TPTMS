@@ -54,20 +54,25 @@ class NotificationService
     /**
      * Send notification when assessment is complete
      */
-    public function notifyAssessmentComplete($ticketId, $requestType, $requestorDept, $approvedBy, $projectName)
+    public function notifyAssessmentComplete($ticketId, $requestType, $requestorId, $approvedBy, $projectName)
     {
         Log::info("=== NOTIFYING ASSESSMENT COMPLETE: {$ticketId} ===");
 
         $recipients = [];
 
-        // Type 1,2,3,4: Notify Department Heads
-        if (!in_array($requestType, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])) {
-            $recipients = $this->getDepartmentHeads($requestorDept);
-            Log::info("Department Heads for {$requestorDept}: " . json_encode($recipients));
+        // If Testing or Parallel Run → notify requestor
+        if (in_array($requestType, [self::REQUEST_TESTING, self::REQUEST_PARALLEL_RUN])) {
+            $recipients[] = $requestorId;
+            Log::info("Request Type {$requestType} - Notifying Requestor: {$requestorId}");
+        }
+        // Otherwise → notify Approver2 or Approver3 of the requestor
+        else {
+            $recipients = $this->getRequestorApprovers($requestorId);
+            Log::info("Approver 2 or 3 of Requestor {$requestorId}: " . json_encode($recipients));
         }
 
         if (empty($recipients)) {
-            Log::warning("No department heads found");
+            Log::warning("No recipients found for Assessment Complete (Ticket {$ticketId})");
             return ['success' => 0, 'failed' => 0];
         }
 
@@ -77,6 +82,7 @@ class NotificationService
             "ASSESSMENT_COMPLETE"
         );
     }
+
 
     /**
      * Send notification when DH approves
@@ -326,6 +332,31 @@ class NotificationService
             return [];
         }
     }
+    private function getRequestorApprovers($requestorId)
+    {
+        try {
+            $approvers = DB::connection('masterlist')->selectOne("
+            SELECT APPROVER2, APPROVER3
+            FROM employee_masterlist
+            WHERE EMPLOYID = ?
+              AND ACCSTATUS = 1
+            LIMIT 1
+        ", [$requestorId]);
+
+            $recipients = [];
+
+            if (!empty($approvers)) {
+                if (!empty($approvers->APPROVER2)) $recipients[] = $approvers->APPROVER2;
+                if (!empty($approvers->APPROVER3)) $recipients[] = $approvers->APPROVER3;
+            }
+
+            return array_unique(array_filter($recipients));
+        } catch (\Exception $e) {
+            Log::error("Error fetching requestor approvers: " . $e->getMessage());
+            return [];
+        }
+    }
+
 
     /**
      * Extract multiple employee IDs from comma-separated string
@@ -364,19 +395,29 @@ class NotificationService
 
         foreach ($recipients as $recipientId) {
             try {
-                // FIXED: Changed from User::find() to NotificationUser
+                // Check if user already exists in NotificationUser
                 $user = NotificationUser::where('emp_id', $recipientId)->first();
 
-                // Auto-create if doesn't exist
                 if (!$user) {
+                    // 🔍 Get employee info from masterlist database
+                    $employee = DB::connection('masterlist')->selectOne("
+                    SELECT EMPLOYID, EMPNAME, DEPARTMENT
+                    FROM employee_masterlist
+                    WHERE EMPLOYID = ?
+                    LIMIT 1
+                ", [$recipientId]);
+
+                    // 🧩 Create NotificationUser using real data if available
                     $user = NotificationUser::create([
-                        'emp_id' => $recipientId,
-                        'emp_name' => 'User ' . $recipientId,
-                        'emp_dept' => 'Unknown',
+                        'emp_id'   => $recipientId,
+                        'emp_name' => $employee ? $employee->EMPNAME : 'User ' . $recipientId,
+                        'emp_dept' => $employee ? $employee->DEPARTMENT : 'Unknown',
                     ]);
+
                     Log::info("Created new NotificationUser: {$recipientId}");
                 }
 
+                // ✅ Send the notification
                 if ($user) {
                     $user->notify($notification);
                     $successCount++;

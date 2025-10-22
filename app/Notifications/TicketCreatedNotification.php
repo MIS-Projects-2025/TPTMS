@@ -3,11 +3,13 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Support\Facades\Log;
 
-class TicketCreatedNotification extends Notification implements ShouldQueue
+class TicketCreatedNotification extends Notification implements ShouldBroadcast
 {
     use Queueable;
 
@@ -30,12 +32,13 @@ class TicketCreatedNotification extends Notification implements ShouldQueue
 
     public function via($notifiable)
     {
-        return ['broadcast', 'database'];
+        return ['database', 'broadcast'];
     }
 
     public function toBroadcast($notifiable)
     {
         return new BroadcastMessage([
+            'id' => uniqid('notif_', true), // Add unique ID
             'ticket_id' => $this->ticketId,
             'message' => "New ticket {$this->ticketId} created by {$this->creatorName}",
             'request_type' => $this->requestTypeLabel,
@@ -46,6 +49,22 @@ class TicketCreatedNotification extends Notification implements ShouldQueue
         ]);
     }
 
+    public function broadcastOn($notifiable = null)
+    {
+        if (!$notifiable) return [];
+
+        Log::info('Broadcasting to channel:', [
+            'channel' => 'users.' . $notifiable->emp_id,
+            'ticket_id' => $this->ticketId
+        ]);
+
+        return new PrivateChannel('users.' . $notifiable->emp_id);
+    }
+
+    public function broadcastAs()
+    {
+        return 'notification.created';
+    }
 
     public function toDatabase($notifiable)
     {
