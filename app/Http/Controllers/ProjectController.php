@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
 class ProjectController extends Controller
 {
@@ -23,7 +24,117 @@ class ProjectController extends Controller
     {
         return DB::connection('projects');
     }
+    public function getProjectsDataTable(Request $request)
+    {
+        $empData = session('emp_data');
+        if (!$empData) {
+            return redirect()->route('login');
+        }
+        $encoded = $request->input('q', '');
+        if ($encoded) {
+            $decodedParams = json_decode(base64_decode($encoded), true);
+            if (is_array($decodedParams)) {
+                $request->merge($decodedParams);
+            }
+        }
+        // Pagination & sorting
+        $page = (int) $request->input('page', 1);
+        $pageSize = (int) $request->input('pageSize', 10);
+        $search = trim((string) $request->input('search', ''));
+        $sortField = (string) $request->input('sortField', 'CREATED_AT');
+        $sortOrder = (string) $request->input('sortOrder', 'desc');
 
+        // Filters
+        $status = $request->input('status', '');
+        $department = $request->input('department', '');
+
+        // Base query
+        $query = $this->projectDB()->table('project_list')->whereNull('DELETED_AT');
+
+        /** 🟦 Filter by status */
+        if ($status) {
+            $statusMap = $this->getProjectStatusOptions();
+            $statusIds = array_keys(array_filter($statusMap, fn($label) => stripos($label, $status) !== false));
+            if (!empty($statusIds)) {
+                $query->whereIn('PROJ_STATUS', $statusIds);
+            }
+        }
+
+        /** 🟦 Filter by department */
+        if ($department) {
+            $query->where('PROJ_DEPT', $department);
+        }
+
+        /** 🟦 Search (by project name or description) */
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('PROJ_NAME', 'like', "%{$search}%")
+                    ->orWhere('PROJ_DESC', 'like', "%{$search}%");
+            });
+        }
+
+        /** 🟦 Count total before pagination */
+        $total = $query->count();
+
+        /** 🟦 Sorting */
+        $columnMap = [
+            'name' => 'PROJ_NAME',
+            'department' => 'PROJ_DEPT',
+            'status' => 'PROJ_STATUS',
+            'created_at' => 'CREATED_AT',
+        ];
+        $query->orderBy($columnMap[$sortField] ?? 'CREATED_AT', $sortOrder);
+
+        /** 🟦 Paginate */
+        $projects = $query->forPage($page, $pageSize)->get();
+
+        /** 🟦 Map display values */
+        $statusOptions = $this->getProjectStatusOptions();
+
+        $data = $projects->map(function ($project) use ($statusOptions) {
+            return [
+                'id' => $project->PROJ_ID,
+                'name' => $project->PROJ_NAME,
+                'description' => $project->PROJ_DESC,
+                'department' => $project->PROJ_DEPT,
+                'status' => $statusOptions[$project->PROJ_STATUS] ?? 'Unknown',
+                'created_at' => $project->CREATED_AT,
+            ];
+        });
+
+        /** 🟦 Dropdown filters */
+        $departments = $this->projectDB()->table('project_list')
+            ->whereNull('DELETED_AT')
+            ->distinct()
+            ->pluck('PROJ_DEPT')
+            ->toArray();
+
+        $statusCounts = [
+            'all' => $this->projectDB()->table('project_list')->whereNull('DELETED_AT')->count(),
+            'active' => $this->projectDB()->table('project_list')->whereNull('DELETED_AT')
+                ->whereIn('PROJ_STATUS', [self::PROJ_STATUS_PLANNING, self::PROJ_STATUS_TRIAGED, self::PROJ_STATUS_IN_PROGRESS])
+                ->count(),
+            'completed' => $this->projectDB()->table('project_list')->whereNull('DELETED_AT')
+                ->where('PROJ_STATUS', self::PROJ_STATUS_DEPLOYED)
+                ->count(),
+            'on_hold' => $this->projectDB()->table('project_list')->whereNull('DELETED_AT')
+                ->where('PROJ_STATUS', self::PROJ_STATUS_ON_HOLD)
+                ->count(),
+        ];
+
+        return Inertia::render('Projects/Table', [
+            'projects' => $data,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $pageSize,
+                'total' => $total,
+                'last_page' => (int) ceil($total / $pageSize),
+            ],
+            'departments' => $departments,
+            'statusCounts' => $statusCounts,
+            'filters' => compact('search', 'department', 'status', 'sortField', 'sortOrder'),
+        ])->with('flash', ['message' => 'Projects loaded successfully']);
+    }
     /**
      * Helper to get project record by name
      */

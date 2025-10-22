@@ -719,11 +719,20 @@ class TicketingController extends Controller
             ->pluck('PROJECT_NAME')
             ->toArray();
 
+        // 🟩 Clone the main filtered query before pagination
+        $baseQuery = clone $query;
+
         $statusCounts = [
-            'all' => DB::table('tickets')->whereNull('DELETED_AT')->count(),
-            'active' => DB::table('tickets')->whereNull('DELETED_AT')->whereIn('STATUS', [self::STATUS_NEW, self::STATUS_TRIAGED])->count(),
-            'in progress' => DB::table('tickets')->whereNull('DELETED_AT')->where('STATUS', self::STATUS_IN_PROGRESS)->count(),
-            'closed' => DB::table('tickets')->whereNull('DELETED_AT')->where('STATUS', self::STATUS_CLOSED)->count(),
+            'all' => (clone $baseQuery)->count(),
+            'active' => (clone $baseQuery)
+                ->whereIn('STATUS', [self::STATUS_NEW, self::STATUS_TRIAGED])
+                ->count(),
+            'in progress' => (clone $baseQuery)
+                ->where('STATUS', self::STATUS_IN_PROGRESS)
+                ->count(),
+            'closed' => (clone $baseQuery)
+                ->where('STATUS', self::STATUS_CLOSED)
+                ->count(),
         ];
 
         return Inertia::render('Ticketing/Table', [

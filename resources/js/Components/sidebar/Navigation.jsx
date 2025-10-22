@@ -37,6 +37,12 @@ export default function NavLinks({ isSidebarOpen }) {
                 icon={<LayoutDashboard className="w-5 h-5" />}
                 isSidebarOpen={isSidebarOpen}
             />
+            <SidebarLink
+                href={route("projects.list")}
+                label="Projects"
+                icon={<FolderKanban className="w-5 h-5" />}
+                isSidebarOpen={isSidebarOpen}
+            />
 
             {/* Tickets Dropdown */}
             <Dropdown
