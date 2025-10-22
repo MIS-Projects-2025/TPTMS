@@ -1,79 +1,38 @@
-import React, { useState, useMemo } from "react";
+// Pages/TaskIndex.jsx
+import React from "react";
 import { usePage } from "@inertiajs/react";
 import { Table, Card, Tag } from "antd";
 import TaskLayout from "@/Layouts/TaskLayout";
 import TaskNavbar from "@/Components/TaskNavBar";
-import dayjs from "dayjs";
-import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
-import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
-
-dayjs.extend(isSameOrAfter);
-dayjs.extend(isSameOrBefore);
+import { useTask } from "@/hooks/useTask";
 
 const TaskIndex = () => {
     const { tasks } = usePage().props;
 
-    // 🌐 Filter states
-    const [isCardView, setIsCardView] = useState(false);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [sortKey, setSortKey] = useState(null);
-    const [selectedDates, setSelectedDates] = useState([dayjs(), dayjs()]);
-    const [selectedStatus, setSelectedStatus] = useState(null); // ✅ new status filter
-    // 🧹 Reset function
-    const handleResetFilters = () => {
-        setSelectedStatus(null);
-        const today = dayjs();
-        setSelectedDates([today.startOf("day"), today.endOf("day")]);
-    };
-    // 🔍 Filter + Sort combined
-    const filteredTasks = useMemo(() => {
-        let result = [...tasks];
+    // 🎯 One hook to rule them all!
+    const {
+        // Filter states
+        selectedDates,
+        selectedStatus,
+        searchTerm,
 
-        // ✅ Filter by date
-        const today = dayjs();
-        const [start, end] =
-            selectedDates && selectedDates.length === 2
-                ? selectedDates
-                : [today.startOf("day"), today.endOf("day")];
+        // View state
+        isCardView,
 
-        result = result.filter((task) => {
-            const taskDate = dayjs(task.TASK_DATE);
-            return (
-                taskDate.isSameOrAfter(start, "day") &&
-                taskDate.isSameOrBefore(end, "day")
-            );
-        });
+        // Computed
+        filteredTasks,
 
-        // ✅ Filter by status (if selected)
-        if (selectedStatus) {
-            result = result.filter((task) => task.STATUS === selectedStatus);
-        }
+        // Setters
+        setSelectedDates,
+        setSelectedStatus,
+        setSearchTerm,
 
-        // ✅ Search filter
-        if (searchTerm) {
-            const lower = searchTerm.toLowerCase();
-            result = result.filter(
-                (task) =>
-                    task.TASK_TITLE.toLowerCase().includes(lower) ||
-                    task.TASK_DESCRIPTION.toLowerCase().includes(lower) ||
-                    task.CREATED_BY.toLowerCase().includes(lower)
-            );
-        }
+        // Actions
+        resetFilters,
+        toggleView,
+    } = useTask(tasks);
 
-        // ✅ Sorting
-        if (sortKey === "date") {
-            result.sort(
-                (a, b) => new Date(b.TASK_DATE) - new Date(a.TASK_DATE)
-            );
-        } else if (sortKey === "priority") {
-            result.sort((a, b) => a.PRIORITY - b.PRIORITY);
-        } else if (sortKey === "status") {
-            result.sort((a, b) => a.STATUS - b.STATUS);
-        }
-
-        return result;
-    }, [tasks, searchTerm, sortKey, selectedDates, selectedStatus]);
-
+    // Table columns configuration
     const columns = [
         { title: "Task ID", dataIndex: "TASK_ID", key: "TASK_ID" },
         { title: "Title", dataIndex: "TASK_TITLE", key: "TASK_TITLE" },
@@ -105,16 +64,16 @@ const TaskIndex = () => {
 
     return (
         <TaskLayout
+            selectedDates={selectedDates}
+            onDateChange={setSelectedDates}
             onFilterStatus={setSelectedStatus}
-            onResetFilters={handleResetFilters}
+            onResetFilters={resetFilters}
         >
             <TaskNavbar
                 isCardView={isCardView}
-                toggleView={() => setIsCardView(!isCardView)}
+                toggleView={toggleView}
+                searchTerm={searchTerm}
                 onSearch={setSearchTerm}
-                onSortChange={setSortKey}
-                onDateChange={setSelectedDates}
-                onResetFilters={handleResetFilters}
             />
 
             <div className="bg-base-100 rounded-xl shadow-md p-4">

@@ -1,23 +1,18 @@
-import React, { useContext, useState } from "react";
+import React, { useContext } from "react";
 import { Link } from "@inertiajs/react";
-import { ArrowLeft, Filter, PlusCircle } from "lucide-react";
+import { ArrowLeft, Filter, RefreshCcw } from "lucide-react";
 import ThemeToggler from "@/Components/sidebar/ThemeToggler";
 import { ThemeContext } from "@/Components/ThemeContext";
+import { DatePicker } from "antd";
 
 export default function TaskLayout({
     children,
+    selectedDates,
+    onDateChange,
     onFilterStatus,
     onResetFilters,
 }) {
     const { theme, toggleTheme } = useContext(ThemeContext);
-
-    const handleFilterStatus = (status) => {
-        if (onFilterStatus) onFilterStatus(status);
-    };
-
-    const handleResetFilters = () => {
-        if (onResetFilters) onResetFilters();
-    };
 
     return (
         <div className="flex h-screen bg-base-200">
@@ -35,33 +30,51 @@ export default function TaskLayout({
                         Filters
                     </h2>
                     <div className="space-y-2">
+                        {/* Date Range Picker - Controlled by parent */}
+                        <DatePicker.RangePicker
+                            value={selectedDates}
+                            onChange={(dates) => {
+                                if (dates && dates.length === 2) {
+                                    onDateChange([
+                                        dates[0].startOf("day"),
+                                        dates[1].endOf("day"),
+                                    ]);
+                                } else {
+                                    // User cleared the selection
+                                    onDateChange(null);
+                                }
+                            }}
+                            format="YYYY-MM-DD"
+                            allowEmpty={[true, true]}
+                            className="w-full"
+                        />
+
+                        {/* Status filters */}
                         <button
                             className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={() => handleFilterStatus(1)}
+                            onClick={() => onFilterStatus(1)}
                         >
-                            <Filter className="w-4 h-4" />
-                            Pending
+                            <Filter className="w-4 h-4" /> Pending
                         </button>
                         <button
                             className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={() => handleFilterStatus(2)}
+                            onClick={() => onFilterStatus(2)}
                         >
-                            <Filter className="w-4 h-4" />
-                            In Progress
+                            <Filter className="w-4 h-4" /> In Progress
                         </button>
                         <button
                             className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={() => handleFilterStatus(3)}
+                            onClick={() => onFilterStatus(3)}
                         >
-                            <Filter className="w-4 h-4" />
-                            Completed
+                            <Filter className="w-4 h-4" /> Completed
                         </button>
+
+                        {/* Reset Filters */}
                         <button
                             className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={handleResetFilters}
+                            onClick={onResetFilters}
                         >
-                            <Filter className="w-4 h-4" />
-                            Reset Filter
+                            <RefreshCcw className="w-4 h-4" /> Reset Filters
                         </button>
                     </div>
                 </div>
