@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
 class TaskController extends Controller
 {
@@ -26,7 +27,16 @@ class TaskController extends Controller
     {
         return DB::connection('task'); // Use your task DB connection here
     }
+    public function getTask()
+    {
+        $tasks = $this->taskDB()->table('daily_tasks')
+            ->orderByDesc('CREATED_AT')
+            ->get();
 
+        return Inertia::render('Tasks/Index', [
+            'tasks' => $tasks,
+        ]);
+    }
     /**
      * Create task from ticket when ticket is assigned
      */
@@ -65,6 +75,82 @@ class TaskController extends Controller
         );
 
         return $taskId;
+    }
+
+
+    public function getTasksDataTable(Request $request)
+    {
+        $empData = session('emp_data');
+        if (!$empData) {
+            return redirect()->route('login');
+        }
+
+        // Optional: pagination setup
+        $page = (int) $request->input('page', 1);
+        $pageSize = (int) $request->input('pageSize', 10);
+
+        // Optional: search
+        $search = trim((string) $request->input('search', ''));
+
+        // Base query
+        $query = $this->taskDB()->table('daily_tasks')
+            ->whereNull('DELETED_AT');
+
+        // 🔍 Search by title or description
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('TASK_TITLE', 'like', "%{$search}%")
+                    ->orWhere('TASK_DESCRIPTION', 'like', "%{$search}%");
+            });
+        }
+
+        // Count before pagination
+        $total = $query->count();
+
+        // Paginate
+        $tasks = $query
+            ->orderBy('CREATED_AT', 'desc')
+            ->forPage($page, $pageSize)
+            ->get();
+
+        // Map readable status labels
+        $statusMap = [
+            self::STATUS_PENDING => 'Pending',
+            self::STATUS_IN_PROGRESS => 'In Progress',
+            self::STATUS_COMPLETED => 'Completed',
+            self::STATUS_ON_HOLD => 'On Hold',
+            self::STATUS_CANCELLED => 'Cancelled',
+        ];
+
+        $sourceMap = [
+            self::SOURCE_TICKET => 'Ticket',
+            self::SOURCE_PROJECT => 'Project',
+            self::SOURCE_MANUAL => 'Manual',
+        ];
+
+        $data = $tasks->map(function ($task) use ($statusMap, $sourceMap) {
+            return [
+                'id' => $task->TASK_ID,
+                'date' => $task->TASK_DATE,
+                'title' => $task->TASK_TITLE,
+                'description' => $task->TASK_DESCRIPTION,
+                'status' => $statusMap[$task->STATUS] ?? 'Unknown',
+                'source' => $sourceMap[$task->SOURCE_TYPE] ?? 'Unknown',
+                'created_by' => $task->CREATED_BY,
+                'created_at' => $task->CREATED_AT,
+            ];
+        });
+
+        return Inertia::render('Tasks/Table', [
+            'tasks' => $data,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $pageSize,
+                'total' => $total,
+                'last_page' => (int) ceil($total / $pageSize),
+            ],
+            'filters' => compact('search'),
+        ]);
     }
 
     /**

@@ -21,6 +21,7 @@ Route::redirect('/', "/$app_name");
 require __DIR__ . '/api.php';
 require __DIR__ . '/ticketing.php';
 require __DIR__ . '/projects.php';
+require __DIR__ . '/tasks.php';
 require __DIR__ . '/auth.php';
 require __DIR__ . '/general.php';
 

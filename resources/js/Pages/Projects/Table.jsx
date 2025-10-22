@@ -1,34 +1,32 @@
-import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import React, { useState } from "react";
 import { usePage, router } from "@inertiajs/react";
-import { Table, Spin, Empty, Select, Space } from "antd";
-import { Search, Filter } from "lucide-react";
+import { Table, Spin, Empty, Tag } from "antd";
+import ProjectLayout from "@/Layouts/ProjectLayout";
+import ProjectNavbar from "@/Components/ProjectNavbar";
 
-const ProjectsTable = () => {
+export default function ProjectsTable() {
     const {
         projects,
         pagination,
         filters: initialFilters,
         departments,
     } = usePage().props;
+
     const [loading, setLoading] = useState(false);
     const [searchValue, setSearchValue] = useState(
         initialFilters?.search || ""
     );
     const [filters, setFilters] = useState(initialFilters || {});
 
-    // 🔐 Helper to encode params
-    const encodeParams = (params) => {
-        return btoa(JSON.stringify(params));
-    };
+    const encodeParams = (params) => btoa(JSON.stringify(params));
 
-    // 🔍 Handle Search
+    // 🔍 Search handler
     const handleSearch = (value) => {
-        const updatedFilters = { ...filters, search: value };
-        setFilters(updatedFilters);
+        const updated = { ...filters, search: value, page: 1 }; // reset to page 1
+        setFilters(updated);
         setSearchValue(value);
 
-        const encoded = encodeParams(updatedFilters);
+        const encoded = encodeParams(updated);
         setLoading(true);
 
         router.get(
@@ -42,12 +40,31 @@ const ProjectsTable = () => {
         );
     };
 
-    // 🔽 Handle Department Filter
+    // 🏢 Department filter
     const handleDepartmentChange = (value) => {
-        const updatedFilters = { ...filters, department: value };
-        setFilters(updatedFilters);
+        const updated = { ...filters, department: value, page: 1 };
+        setFilters(updated);
 
-        const encoded = encodeParams(updatedFilters);
+        const encoded = encodeParams(updated);
+        setLoading(true);
+
+        router.get(
+            route("projects.list"),
+            { q: encoded },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                onFinish: () => setLoading(false),
+            }
+        );
+    };
+
+    // 📄 Pagination handler
+    const handleTableChange = (paginationData) => {
+        const updated = { ...filters, page: paginationData.current };
+        setFilters(updated);
+
+        const encoded = encodeParams(updated);
         setLoading(true);
 
         router.get(
@@ -63,59 +80,44 @@ const ProjectsTable = () => {
 
     const columns = [
         { title: "Project Name", dataIndex: "name", key: "name" },
-        {
-            title: "Project Description",
-            dataIndex: "description",
-            key: "description",
-        },
+        { title: "Description", dataIndex: "description", key: "description" },
         { title: "Department", dataIndex: "department", key: "department" },
-        { title: "Status", dataIndex: "status", key: "status" },
+        {
+            title: "Status",
+            dataIndex: "status",
+            key: "status",
+            render: (status) => {
+                const colors = {
+                    "Not Started": "default",
+                    "In Progress": "blue",
+                    "On Hold": "orange",
+                    Completed: "green",
+                    Cancelled: "red",
+                };
+                return (
+                    <Tag color={colors[status] || "gray"}>
+                        {status || "Unknown"}
+                    </Tag>
+                );
+            },
+        },
     ];
 
     return (
-        <AuthenticatedLayout>
-            {/* Filters */}
-            <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
-                <div className="flex items-center gap-2">
-                    <Search className="w-4 h-4 text-base-content/70" />
-                    <input
-                        type="text"
-                        placeholder="Search projects..."
-                        value={searchValue}
-                        onChange={(e) => handleSearch(e.target.value)}
-                        className="input input-bordered input-sm w-64"
-                    />
-                </div>
+        <ProjectLayout>
+            <ProjectNavbar
+                searchValue={searchValue}
+                onSearch={handleSearch}
+                departments={departments}
+                onDepartmentChange={handleDepartmentChange}
+            />
 
-                <Space wrap>
-                    <Select
-                        placeholder="Filter by Department"
-                        allowClear
-                        style={{ width: 180 }}
-                        onChange={handleDepartmentChange}
-                        value={filters?.department || undefined}
-                    >
-                        {departments?.map((dept) => (
-                            <Select.Option key={dept} value={dept}>
-                                {dept}
-                            </Select.Option>
-                        ))}
-                    </Select>
-
-                    <button className="btn btn-outline btn-sm flex items-center gap-2">
-                        <Filter className="w-4 h-4" />
-                        Filters
-                    </button>
-                </Space>
-            </div>
-
-            {/* Table */}
             <Spin spinning={loading}>
                 {projects && projects.length > 0 ? (
                     <Table
                         columns={columns}
                         dataSource={projects}
-                        rowKey={(record) => record.id}
+                        rowKey={(r) => r.id}
                         pagination={{
                             current: pagination?.current_page || 1,
                             pageSize: pagination?.per_page || 10,
@@ -126,9 +128,9 @@ const ProjectsTable = () => {
                         }}
                         bordered
                         size="middle"
-                        scroll={{ x: 1200 }}
+                        scroll={{ x: 1000 }}
                         className="bg-base-100 rounded-xl shadow-md"
-                        loading={loading}
+                        onChange={handleTableChange} // ✅ added handler
                     />
                 ) : (
                     <div className="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl shadow-md">
@@ -136,8 +138,6 @@ const ProjectsTable = () => {
                     </div>
                 )}
             </Spin>
-        </AuthenticatedLayout>
+        </ProjectLayout>
     );
-};
-
-export default ProjectsTable;
+}

@@ -37,12 +37,6 @@ export default function NavLinks({ isSidebarOpen }) {
                 icon={<LayoutDashboard className="w-5 h-5" />}
                 isSidebarOpen={isSidebarOpen}
             />
-            <SidebarLink
-                href={route("projects.list")}
-                label="Projects"
-                icon={<FolderKanban className="w-5 h-5" />}
-                isSidebarOpen={isSidebarOpen}
-            />
 
             {/* Tickets Dropdown */}
             <Dropdown
@@ -50,7 +44,18 @@ export default function NavLinks({ isSidebarOpen }) {
                 icon={<Ticket className="w-5 h-5" />}
                 links={ticketLinks}
             />
-
+            <SidebarLink
+                href={route("projects.list")}
+                label="Projects"
+                icon={<FolderKanban className="w-5 h-5" />}
+                isSidebarOpen={isSidebarOpen}
+            />
+            <SidebarLink
+                href={route("tasks")}
+                label="Tasks"
+                icon={<ListTodo className="w-5 h-5" />}
+                isSidebarOpen={isSidebarOpen}
+            />
             {/* Admin section */}
             {["superadmin", "admin"].includes(emp_data?.emp_system_role) && (
                 <SidebarLink
