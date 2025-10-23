@@ -1,11 +1,32 @@
 import { Bell, Check, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNotifications } from "@/Context/NotificationContext";
 
 export default function NotificationBell() {
     const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef(null);
     const { notifications, unreadCount, markAsRead, markAllAsRead } =
         useNotifications();
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (
+                dropdownRef.current &&
+                !dropdownRef.current.contains(event.target)
+            ) {
+                setIsOpen(false);
+            }
+        };
+
+        if (isOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [isOpen]);
 
     const formatDate = (dateString) => {
         const date = new Date(dateString);
@@ -24,6 +45,8 @@ export default function NotificationBell() {
 
     // Handle notification click - redirect to ticket and mark as read
     const handleNotificationClick = async (notif) => {
+        console.log("Notification clicked:", notif);
+
         // Mark as read if unread
         if (!notif.read_at) {
             await markAsRead(notif.id);
@@ -32,9 +55,19 @@ export default function NotificationBell() {
         // Close the dropdown
         setIsOpen(false);
 
-        // Redirect to ticket view
+        // Redirect to ticket view with action required
         if (notif.ticket_id) {
-            const hash = btoa(`${notif.ticket_id}:VIEW`);
+            // Parse data to get action_required
+            const notifData =
+                typeof notif.data === "string"
+                    ? JSON.parse(notif.data)
+                    : notif.data || {};
+
+            // Check action_required in root level first, then in data
+            const actionRequired =
+                notif.action_required || notifData.action_required || "VIEW";
+            console.log("Redirecting with action:", actionRequired);
+            const hash = btoa(`${notif.ticket_id}:${actionRequired}`);
             window.location.href = route("tickets.view", hash);
         }
     };
@@ -43,10 +76,9 @@ export default function NotificationBell() {
     const getNotificationStyle = (type) => {
         const styles = {
             TICKET_CREATED: "bg-blue-500/10 border-l-blue-500",
-            TICKET_UPDATED: "bg-yellow-500/10 border-l-yellow-500",
+            TICKET_APPROVED: "bg-green-500/10 border-l-green-500",
             TICKET_ASSIGNED: "bg-purple-500/10 border-l-purple-500",
-            TICKET_STATUS_CHANGED: "bg-orange-500/10 border-l-orange-500",
-            TICKET_RESOLVED: "bg-green-500/10 border-l-green-500",
+            TICKET_RESOLVED: "bg-emerald-500/10 border-l-emerald-500",
             TICKET_CLOSED: "bg-gray-500/10 border-l-gray-500",
         };
         return styles[type] || "bg-info/10 border-l-info";
@@ -56,17 +88,30 @@ export default function NotificationBell() {
     const getNotificationIcon = (type) => {
         const icons = {
             TICKET_CREATED: "🎫",
-            TICKET_UPDATED: "✏️",
+            TICKET_APPROVED: "✅",
             TICKET_ASSIGNED: "👤",
-            TICKET_STATUS_CHANGED: "🔄",
-            TICKET_RESOLVED: "✅",
+            TICKET_RESOLVED: "🎉",
             TICKET_CLOSED: "🔒",
         };
         return icons[type] || "📢";
     };
 
+    // Get action required label
+    const getActionLabel = (actionRequired) => {
+        const labels = {
+            ASSESS: "⚡ Assess",
+            TEST: "🧪 Test",
+            CLOSE: "✓ Close",
+            APPROVE: "✓ Approve",
+            RESOLVE: "🔧 Resolve",
+            ASSIGN: "👥 Assign",
+            VIEW: "👁 View",
+        };
+        return labels[actionRequired] || "👁 View";
+    };
+
     return (
-        <div className="dropdown dropdown-end">
+        <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="btn btn-ghost btn-circle indicator hover:bg-base-200 transition-colors"
@@ -80,7 +125,7 @@ export default function NotificationBell() {
             </button>
 
             {isOpen && (
-                <div className="dropdown-content card card-compact w-96 shadow-xl bg-base-100 border border-base-300 p-0 rounded-lg z-50">
+                <div className="absolute right-0 top-full mt-2 card card-compact w-96 shadow-xl bg-base-100 border border-base-300 p-0 rounded-lg z-50">
                     <div className="p-4 border-b border-base-300 flex justify-between items-center bg-base-200 rounded-t-lg">
                         <h3 className="font-bold text-lg flex items-center gap-2">
                             <Bell size={20} />
@@ -88,7 +133,8 @@ export default function NotificationBell() {
                         </h3>
                         {unreadCount > 0 && (
                             <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                    e.stopPropagation();
                                     markAllAsRead();
                                 }}
                                 className="text-xs btn btn-link btn-xs text-primary no-underline hover:underline"
@@ -128,6 +174,8 @@ export default function NotificationBell() {
                                 const project =
                                     notifData.project_name || notif.project;
                                 const requestType = notifData.request_type;
+                                const actionRequired =
+                                    notif.action_required || "VIEW";
 
                                 return (
                                     <div
@@ -136,6 +184,7 @@ export default function NotificationBell() {
                                             handleNotificationClick({
                                                 ...notif,
                                                 ticket_id: ticketId,
+                                                data: notifData,
                                             })
                                         }
                                         className={`p-4 border-b border-base-300 hover:bg-base-200 transition-all cursor-pointer group relative ${
@@ -174,7 +223,7 @@ export default function NotificationBell() {
                                                     {message}
                                                 </p>
 
-                                                {/* Project and Request Type */}
+                                                {/* Project, Request Type, and Action Required */}
                                                 <div className="flex flex-wrap gap-2 mt-2">
                                                     {project && (
                                                         <span className="badge badge-sm badge-outline">
@@ -186,6 +235,15 @@ export default function NotificationBell() {
                                                             {requestType}
                                                         </span>
                                                     )}
+                                                    {actionRequired &&
+                                                        actionRequired !==
+                                                            "VIEW" && (
+                                                            <span className="badge badge-sm badge-warning">
+                                                                {getActionLabel(
+                                                                    actionRequired
+                                                                )}
+                                                            </span>
+                                                        )}
                                                 </div>
 
                                                 {/* Timestamp */}
@@ -199,24 +257,6 @@ export default function NotificationBell() {
 
                                             {/* Action buttons */}
                                             <div className="flex flex-col gap-1">
-                                                {/* View ticket button */}
-                                                <button
-                                                    className="btn btn-ghost btn-xs btn-circle hover:bg-primary hover:text-primary-content transition-all tooltip tooltip-left"
-                                                    data-tip="View ticket"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleNotificationClick(
-                                                            {
-                                                                ...notif,
-                                                                ticket_id:
-                                                                    ticketId,
-                                                            }
-                                                        );
-                                                    }}
-                                                >
-                                                    <ExternalLink size={14} />
-                                                </button>
-
                                                 {/* Mark as read button */}
                                                 {!notif.read_at && (
                                                     <button
@@ -247,7 +287,10 @@ export default function NotificationBell() {
                     {notifications.length > 0 && (
                         <div className="p-3 border-t border-base-300 bg-base-200 rounded-b-lg text-center">
                             <button
-                                onClick={() => setIsOpen(false)}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsOpen(false);
+                                }}
                                 className="text-xs text-base-content/60 hover:text-primary transition-colors"
                             >
                                 Close notifications

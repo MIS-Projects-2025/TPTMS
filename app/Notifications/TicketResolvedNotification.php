@@ -16,12 +16,20 @@ class TicketResolvedNotification extends Notification implements ShouldBroadcast
     public $ticketId;
     public $resolvedBy;
     public $projectName;
+    public $actionRequired;
 
     public function __construct($ticketId, $resolvedBy, $projectName = '')
     {
         $this->ticketId = $ticketId;
         $this->resolvedBy = $resolvedBy;
         $this->projectName = $projectName;
+        $this->actionRequired = null;
+    }
+
+    public function setActionRequired($action)
+    {
+        $this->actionRequired = $action;
+        return $this;
     }
 
     public function via($notifiable)
@@ -38,7 +46,7 @@ class TicketResolvedNotification extends Notification implements ShouldBroadcast
             'resolved_by' => $this->resolvedBy,
             'project_name' => $this->projectName,
             'type' => 'TICKET_RESOLVED',
-            'action' => 'VERIFY',
+            'action_required' => $this->actionRequired,
             'timestamp' => now()->toDateTimeString(),
         ]);
     }
@@ -68,6 +76,7 @@ class TicketResolvedNotification extends Notification implements ShouldBroadcast
             'resolved_by' => $this->resolvedBy,
             'project_name' => $this->projectName,
             'type' => 'TICKET_RESOLVED',
+            'action_required' => $this->actionRequired,
             'created_at' => now()->toDateTimeString(),
         ];
     }

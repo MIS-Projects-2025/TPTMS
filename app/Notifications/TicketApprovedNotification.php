@@ -17,6 +17,7 @@ class TicketApprovedNotification extends Notification implements ShouldBroadcast
     public $approvedBy;
     public $approvalType;
     public $projectName;
+    public $actionRequired;
 
     public function __construct($ticketId, $approvedBy, $approvalType, $projectName = '')
     {
@@ -24,6 +25,13 @@ class TicketApprovedNotification extends Notification implements ShouldBroadcast
         $this->approvedBy = $approvedBy;
         $this->approvalType = $approvalType; // 'ASSESSMENT', 'DH', 'OD'
         $this->projectName = $projectName;
+        $this->actionRequired = null;
+    }
+
+    public function setActionRequired($action)
+    {
+        $this->actionRequired = $action;
+        return $this;
     }
 
     public function via($notifiable)
@@ -48,6 +56,7 @@ class TicketApprovedNotification extends Notification implements ShouldBroadcast
             'approval_type' => $this->approvalType,
             'project_name' => $this->projectName,
             'type' => 'TICKET_APPROVED',
+            'action_required' => $this->actionRequired,
             'timestamp' => now()->toDateTimeString(),
         ]);
     }
@@ -78,6 +87,7 @@ class TicketApprovedNotification extends Notification implements ShouldBroadcast
             'approval_type' => $this->approvalType,
             'project_name' => $this->projectName,
             'type' => 'TICKET_APPROVED',
+            'action_required' => $this->actionRequired,
             'created_at' => now()->toDateTimeString(),
         ];
     }

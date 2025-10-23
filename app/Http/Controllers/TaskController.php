@@ -50,7 +50,7 @@ class TaskController extends Controller
             // ✅ use numeric source type
             'SOURCE_TYPE' => self::SOURCE_TICKET,
             'SOURCE_ID' => $ticketCode, // from ticket system
-            'PROJ_ID' => $projId,
+            'SOURCE_TYPE' => "TICKET",
 
             'TASK_TITLE' => 'Ticket: ' . $ticketCode,
             'TASK_DESCRIPTION' => $remarks ?? 'Assigned for work',

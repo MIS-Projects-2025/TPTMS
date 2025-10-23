@@ -62,6 +62,8 @@ export function NotificationProvider({ children, userId }) {
                     message: notification.message,
                     type: notification.type,
                     project: notification.project_name,
+                    request_type: notification.request_type,
+                    action_required: notification.action_required,
                     created_at:
                         notification.timestamp || new Date().toISOString(),
                     read_at: null,

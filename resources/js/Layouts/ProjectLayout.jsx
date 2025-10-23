@@ -3,6 +3,7 @@ import { Link } from "@inertiajs/react";
 import { ArrowLeft, Filter, PlusCircle } from "lucide-react";
 import ThemeToggler from "@/Components/sidebar/ThemeToggler";
 import { ThemeContext } from "@/Components/ThemeContext";
+import NavBar from "@/Components/NavBar";
 
 export default function ProjectLayout({ children }) {
     const { theme, toggleTheme } = useContext(ThemeContext);
@@ -38,8 +39,12 @@ export default function ProjectLayout({ children }) {
                 </div>
             </aside>
 
-            {/* 🟦 Main Content */}
-            <main className="flex-1 overflow-y-auto p-6">{children}</main>
+            <div className="flex-1 flex flex-col min-w-0">
+                <NavBar /> {/* top navbar */}
+                <main className="flex-1 px-4 sm:px-6 py-6 pb-[70px] overflow-y-auto">
+                    {children}
+                </main>
+            </div>
         </div>
     );
 }

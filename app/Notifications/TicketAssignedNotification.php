@@ -16,12 +16,20 @@ class TicketAssignedNotification extends Notification implements ShouldBroadcast
     public $ticketId;
     public $assignedBy;
     public $projectName;
+    public $actionRequired;
 
     public function __construct($ticketId, $assignedBy, $projectName = '')
     {
         $this->ticketId = $ticketId;
         $this->assignedBy = $assignedBy;
         $this->projectName = $projectName;
+        $this->actionRequired = null;
+    }
+
+    public function setActionRequired($action)
+    {
+        $this->actionRequired = $action;
+        return $this;
     }
 
     public function via($notifiable)
@@ -38,7 +46,7 @@ class TicketAssignedNotification extends Notification implements ShouldBroadcast
             'assigned_by' => $this->assignedBy,
             'project_name' => $this->projectName,
             'type' => 'TICKET_ASSIGNED',
-            'action' => 'START_WORK',
+            'action_required' => $this->actionRequired,
             'timestamp' => now()->toDateTimeString(),
         ]);
     }
@@ -68,6 +76,7 @@ class TicketAssignedNotification extends Notification implements ShouldBroadcast
             'assigned_by' => $this->assignedBy,
             'project_name' => $this->projectName,
             'type' => 'TICKET_ASSIGNED',
+            'action_required' => $this->actionRequired,
             'created_at' => now()->toDateTimeString(),
         ];
     }

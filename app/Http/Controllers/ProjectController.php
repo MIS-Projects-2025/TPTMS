@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+
 
 class ProjectController extends Controller
 {
@@ -16,6 +19,16 @@ class ProjectController extends Controller
     const PROJ_STATUS_DEPLOYED = 5;
     const PROJ_STATUS_CANCELLED = 6;
     const PROJ_STATUS_INACTIVE = 7;
+    protected $statusMapping = [
+        'planning' => self::PROJ_STATUS_PLANNING,
+        'ready' => self::PROJ_STATUS_TRIAGED,
+        'triaged' => self::PROJ_STATUS_TRIAGED,
+        'in progress' => self::PROJ_STATUS_IN_PROGRESS,
+        'on hold' => self::PROJ_STATUS_ON_HOLD,
+        'deployed' => self::PROJ_STATUS_DEPLOYED,
+        'cancelled' => self::PROJ_STATUS_CANCELLED,
+        'inactive' => self::PROJ_STATUS_INACTIVE,
+    ];
 
     /**
      * Helper function to get project DB connection
@@ -173,6 +186,48 @@ class ProjectController extends Controller
             'filters' => compact('search', 'department', 'status', 'sortField', 'sortOrder'),
         ])->with('flash', ['message' => 'Projects loaded successfully']);
     }
+    public function getProjectLogs($projectId)
+    {
+        $empData = session('emp_data');
+        if (!$empData) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $logs = $this->projectDB()->table('project_logs')
+            ->where('PROJ_ID', $projectId)
+            ->orderBy('UPDATE_AT', 'desc')
+            ->paginate(10, [ // ✅ use paginate for frontend pagination
+                'ID',
+                'PROJ_ID',
+                'ACTION_TYPE',
+                'DESCRIPTION',
+                'PROJECT_VERSION',
+                'PROJ_STATUS',
+                'ASSIGNED_PROGS',
+                'ACTION_BY',
+                'UPDATE_AT',
+            ]);
+
+        $statusOptions = $this->getProjectStatusOptions();
+
+        // ✅ Map each log to readable data
+        $logs->getCollection()->transform(function ($log) use ($statusOptions) {
+            return [
+                'ID' => $log->ID,
+                'ACTION_TYPE' => $log->ACTION_TYPE,
+                'DESCRIPTION' => $log->DESCRIPTION,
+                'PROJECT_VERSION' => $log->PROJECT_VERSION,
+                'PROJ_STATUS' => $statusOptions[$log->PROJ_STATUS] ?? $log->PROJ_STATUS,
+                'ASSIGNED_PROGS' => $log->ASSIGNED_PROGS,
+                'ACTION_BY' => $log->ACTION_BY,
+                'UPDATE_AT' => $log->UPDATE_AT,
+            ];
+        });
+
+        return response()->json($logs); // ✅ Return as JSON
+    }
+
+
     /**
      * Helper to get project record by name
      */
@@ -375,5 +430,272 @@ class ProjectController extends Controller
             self::PROJ_STATUS_CANCELLED => 'Cancelled',
             self::PROJ_STATUS_INACTIVE => 'Inactive',
         ];
+    }
+
+    public function importExcel(Request $request)
+    {
+        // Log::info('File received:', [
+        //     'hasFile' => $request->hasFile('excel_file'),
+        //     'file' => $request->file('excel_file'),
+        // ]);
+
+        $request->validate([
+            'excel_file' => 'required|mimes:xlsx,xls,csv|max:2048'
+        ]);
+
+        try {
+            $empData = session('emp_data');
+            $userId = $empData['emp_id'];
+
+            $file = $request->file('excel_file');
+            $spreadsheet = IOFactory::load($file->getPathname());
+            $worksheet = $spreadsheet->getActiveSheet();
+            $rows = $worksheet->toArray();
+
+            // Get header row (first row)
+            $headers = array_map('trim', $rows[0]);
+            $headers = array_map('strtoupper', $headers); // Convert to uppercase for consistency
+
+            // Validate required columns
+            $requiredColumns = ['PROJ_NAME', 'PROJ_DEPT', 'PROJ_STATUS'];
+            $missingColumns = array_diff($requiredColumns, $headers);
+
+            if (!empty($missingColumns)) {
+                return redirect()->route('project.list')
+                    ->with('error', 'Missing required columns: ' . implode(', ', $missingColumns));
+            }
+
+            $imported = 0;
+            $updated = 0;
+            $errors = [];
+
+            // Process data rows (skip header)
+            for ($i = 1; $i < count($rows); $i++) {
+                $row = $rows[$i];
+
+                // Skip empty rows
+                if (empty(array_filter($row))) {
+                    continue;
+                }
+
+                try {
+                    // Create associative array from row data
+                    $data = array_combine($headers, $row);
+                    // // For debugging without stopping execution:
+                    // Log::info('Import data:', ['data' => $data, 'userId' => $userId]);
+                    // Process the row
+                    $result = $this->processImportRow($data, $userId);
+                    // dd($result);
+                    if ($result['action'] === 'insert') {
+                        $imported++;
+                    } elseif ($result['action'] === 'update') {
+                        $updated++;
+                    }
+                } catch (\Exception $e) {
+                    $errors[] = "Row " . ($i + 1) . ": " . $e->getMessage();
+                }
+            }
+
+            $message = "Import completed. Inserted: $imported, Updated: $updated";
+            if (!empty($errors)) {
+                $message .= ". Errors: " . implode('; ', array_slice($errors, 0, 5));
+            }
+
+            return redirect()->route('project.list')->with('success', $message);
+        } catch (\Exception $e) {
+            return redirect()->route('project.list')
+                ->with('error', 'Import failed: ' . $e->getMessage());
+        }
+    }
+
+    private function processImportRow($data, $userId)
+    {
+        // Clean and validate data
+        $processedData = $this->cleanImportData($data);
+        // dd($data, $userId);
+        // Check if project exists (by PROJ_ID if provided, or by PROJ_NAME)
+        $existingProject = null;
+
+        if (!empty($processedData['PROJ_ID'])) {
+            $existingProject = DB::connection('projects')
+                ->table('project_list')
+                ->where('PROJ_ID', $processedData['PROJ_ID'])
+                ->first();
+        } else {
+            // Check by project name if no ID provided
+            $existingProject = DB::connection('projects')
+                ->table('project_list')
+                ->where('PROJ_NAME', $processedData['PROJ_NAME'])
+                ->first();
+        }
+
+        if ($existingProject) {
+            // Update existing project
+            DB::connection('projects')->table('project_list')
+                ->where('PROJ_ID', $existingProject->PROJ_ID)
+                ->update([
+                    'PROJ_NAME' => $processedData['PROJ_NAME'],
+                    'PROJ_DESC' => $processedData['PROJ_DESC'] ?? null,
+                    'PROJ_DEPT' => $processedData['PROJ_DEPT'],
+                    'PROJ_STATUS' => $processedData['PROJ_STATUS'],
+                    'PROJ_REQUESTOR' => $processedData['PROJ_REQUESTOR'] ?? null,
+                    'DATE_START' => $processedData['DATE_START'] ?? null,
+                    'DATE_END' => $processedData['DATE_END'] ?? null,
+                    'TARGET_DEADLINE' => $processedData['TARGET_DEADLINE'] ?? null,
+                    'ASSIGNED_PROGS' => $processedData['ASSIGNED_PROGS'] ?? null,
+                    'UPDATED_BY' => $userId,
+                    'UPDATED_AT' => now(),
+                ]);
+
+            return ['action' => 'update', 'id' => $existingProject->PROJ_ID];
+        } else {
+            // Insert new project
+            DB::connection('projects')->table('project_list')->insert([
+                'PROJ_NAME' => $processedData['PROJ_NAME'],
+                'PROJ_DESC' => $processedData['PROJ_DESC'] ?? null,
+                'PROJ_DEPT' => $processedData['PROJ_DEPT'],
+                'PROJ_STATUS' => $processedData['PROJ_STATUS'],
+                'PROJ_REQUESTOR' => $processedData['PROJ_REQUESTOR'] ?? null,
+                'DATE_START' => $processedData['DATE_START'] ?? null,
+                'DATE_END' => $processedData['DATE_END'] ?? null,
+                'TARGET_DEADLINE' => $processedData['TARGET_DEADLINE'] ?? null,
+                'ASSIGNED_PROGS' => $processedData['ASSIGNED_PROGS'] ?? null,
+                'CREATED_BY' => $userId,
+                'CREATED_AT' => now(),
+                'UPDATED_AT' => now(),
+            ]);
+
+            return ['action' => 'insert'];
+        }
+    }
+
+    private function cleanImportData($data)
+    {
+        $cleaned = [];
+
+        // PROJ_ID
+        if (isset($data['PROJ_ID']) && !empty($data['PROJ_ID'])) {
+            $cleaned['PROJ_ID'] = (int)$data['PROJ_ID'];
+        }
+
+        // PROJ_NAME (required)
+        if (empty($data['PROJ_NAME'])) {
+            throw new \Exception('Project name is required');
+        }
+        $cleaned['PROJ_NAME'] = trim($data['PROJ_NAME']);
+
+        // PROJ_DESC
+        $cleaned['PROJ_DESC'] = isset($data['PROJ_DESC']) ? trim($data['PROJ_DESC']) : null;
+
+        // PROJ_DEPT (required)
+        if (empty($data['PROJ_DEPT'])) {
+            throw new \Exception('Project department is required');
+        }
+        $cleaned['PROJ_DEPT'] = trim($data['PROJ_DEPT']);
+
+        // PROJ_STATUS (required)
+        if (empty($data['PROJ_STATUS'])) {
+            throw new \Exception('Project status is required');
+        }
+        $cleaned['PROJ_STATUS'] = $this->convertStatusToNumeric($data['PROJ_STATUS']);
+
+        // PROJ_REQUESTOR (optional)
+        $cleaned['PROJ_REQUESTOR'] = isset($data['PROJ_REQUESTOR']) && !empty(trim($data['PROJ_REQUESTOR']))
+            ? trim($data['PROJ_REQUESTOR'])
+            : null;
+
+        // DATE_START (optional)
+        $cleaned['DATE_START'] = isset($data['DATE_START']) && !empty($data['DATE_START'])
+            ? date('Y-m-d', strtotime($data['DATE_START']))
+            : null;
+
+        // DATE_END (optional)
+        $cleaned['DATE_END'] = isset($data['DATE_END']) && !empty($data['DATE_END'])
+            ? date('Y-m-d', strtotime($data['DATE_END']))
+            : null;
+        // TARGET_DEADLINE (optional)
+        $cleaned['TARGET_DEADLINE'] = isset($data['TARGET_DEADLINE']) && !empty($data['TARGET_DEADLINE'])
+            ? date('Y-m-d', strtotime($data['TARGET_DEADLINE']))
+            : null;
+        // ASSIGNED_PROGS (optional)
+        $cleaned['ASSIGNED_PROGS'] = isset($data['ASSIGNED_PROGS']) && !empty($data['ASSIGNED_PROGS'])
+            ? implode(',', array_map('trim', explode(',', $data['ASSIGNED_PROGS'])))
+            : null;
+
+        return $cleaned;
+    }
+
+
+    private function convertStatusToNumeric($status)
+    {
+        // If already numeric, validate and return
+        if (is_numeric($status)) {
+            $numericStatus = (int)$status;
+            if (in_array($numericStatus, [1, 2, 3, 4, 5, 6])) {
+                return $numericStatus;
+            }
+        }
+
+        // Convert text status to numeric
+        $statusLower = strtolower(trim($status));
+
+        // Direct match first
+        if (isset($this->statusMapping[$statusLower])) {
+            return $this->statusMapping[$statusLower];
+        }
+
+        // Try with underscores replaced with spaces
+        $statusWithSpaces = str_replace('_', ' ', $statusLower);
+        if (isset($this->statusMapping[$statusWithSpaces])) {
+            return $this->statusMapping[$statusWithSpaces];
+        }
+
+        // Try with spaces replaced with underscores
+        $statusWithUnderscores = str_replace(' ', '_', $statusLower);
+        if (isset($this->statusMapping[$statusWithUnderscores])) {
+            return $this->statusMapping[$statusWithUnderscores];
+        }
+
+        // Try partial matches
+        foreach ($this->statusMapping as $text => $numeric) {
+            if (strpos($statusLower, $text) !== false || strpos($text, $statusLower) !== false) {
+                return $numeric;
+            }
+        }
+
+        throw new \Exception("Invalid status: $status. Valid options: " . implode(', ', array_keys($this->statusMapping)) . " or numeric values 1-6");
+    }
+
+    public function downloadTemplate()
+    {
+        $headers = [
+            'PROJ_ID',
+            'PROJ_NAME',
+            'PROJ_DESC',
+            'PROJ_DEPT',
+            'PROJ_STATUS',
+            'PROJ_REQUESTOR',
+            'DATE_START',
+            'DATE_END',
+            'TARGET_DEADLINE',
+            'ASSIGNED_PROGS'
+        ];
+        $sampleData = [
+            ['', 'Sample Project 1', 'Sample description', 'MIS', 'Pending', '1390', '2025-08-18', '2025-09-18', '2025-08-01', "'1705,1706"],
+            ['', 'Sample Project 2', 'Another description', 'HR', 'On Hold', '', '', '', '2025-08-01', "'1707"],
+            ['', 'Sample Project 3', 'Third project', 'IT', 'Deployed', '1705', '2025-08-01', '2025-08-31', '2025-08-01',  ''],
+        ];
+
+        // Create CSV content
+        $content = implode(',', $headers) . "\n";
+        foreach ($sampleData as $row) {
+            $content .= implode(',', array_map(function ($field) {
+                return '"' . str_replace('"', '""', $field) . '"';
+            }, $row)) . "\n";
+        }
+
+        return response($content)
+            ->header('Content-Type', 'text/csv')
+            ->header('Content-Disposition', 'attachment; filename="project_import_template.csv"');
     }
 }

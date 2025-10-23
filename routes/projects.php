@@ -12,4 +12,9 @@ Route::prefix($app_name)
 
         Route::get('/projects/datatable', [ProjectController::class, 'getProjectsDataTable'])
             ->name('projects.list');
+
+        // Excel Import Routes
+        Route::post('/projectList/import', [ProjectController::class, 'importExcel'])->name('project.import');
+        Route::get('/projectList/template', [ProjectController::class, 'downloadTemplate'])->name('project.template');
+        Route::get('/projects/{id}/logs', [ProjectController::class, 'getProjectLogs'])->name('project.logs');
     });

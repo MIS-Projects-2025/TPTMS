@@ -4,6 +4,7 @@ import { ArrowLeft, Filter, RefreshCcw } from "lucide-react";
 import ThemeToggler from "@/Components/sidebar/ThemeToggler";
 import { ThemeContext } from "@/Components/ThemeContext";
 import { DatePicker } from "antd";
+import NavBar from "@/Components/NavBar";
 
 export default function TaskLayout({
     children,
@@ -84,7 +85,12 @@ export default function TaskLayout({
                 </div>
             </aside>
 
-            <main className="flex-1 overflow-y-auto p-6">{children}</main>
+            <div className="flex-1 flex flex-col min-w-0">
+                <NavBar /> {/* top navbar */}
+                <main className="flex-1 px-4 sm:px-6 py-6 pb-[70px] overflow-y-auto">
+                    {children}
+                </main>
+            </div>
         </div>
     );
 }
