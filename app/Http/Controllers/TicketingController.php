@@ -1133,7 +1133,249 @@ class TicketingController extends Controller
 
         return $labels[$status] ?? 'Unknown';
     }
+    public function assignTicket(Request $request, $ticketId)
+    {
+        $validated = $request->validate([
+            'assigned_to' => 'required|array',
+            'assigned_to.*' => 'required|string|max:20',
+            'remarks' => 'nullable|string|max:1000',
+        ]);
 
+        $ticket = DB::selectOne('
+            SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST, PROJECT_NAME
+            FROM tickets
+            WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+        ', [$ticketId]);
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        if (!$ticket->PROJECT_NAME) {
+            return response()->json(['error' => 'Project not found'], 400);
+        }
+
+        $workflowPath = $this->getRequiredWorkflowPath($ticket->TYPE_OF_REQUEST);
+
+        // Check if ticket is in correct status for assignment
+        if (!$workflowPath['can_direct_assign'] && $ticket->STATUS !== self::STATUS_APPROVED) {
+            return response()->json([
+                'error' => 'Ticket must be approved before assignment'
+            ], 400);
+        }
+
+        $currentUser = session('emp_data');
+        $assignedToString = implode(',', $validated['assigned_to']);
+
+        DB::beginTransaction();
+        try {
+            // 1. Update TICKET to IN_PROGRESS
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update([
+                    'ASSIGNED_TO' => $assignedToString,
+                    'STATUS' => self::STATUS_IN_PROGRESS,
+                    'UPDATED_AT' => now(),
+                ]);
+
+            // 2. Update PROJECT to IN_PROGRESS via ProjectController
+            $projectController = new ProjectController();
+            $projectController->updateToInProgress($ticket->PROJECT_NAME, $assignedToString, $currentUser['emp_id']);
+
+            // 3. Create TASK via TaskController
+            $taskController = new TaskController();
+            $taskId = $taskController->createFromTicket(
+                $ticket->TICKET_ID,
+                $ticket->PROJECT_NAME,
+                $validated['remarks'],
+                $assignedToString,
+                $currentUser['emp_id']
+            );
+
+            // 4. Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_ASSIGNED,
+                $currentUser['emp_id'],
+                $validated['remarks'] ?? 'Ticket assigned to programmer(s)',
+                ['assigned_to' => $validated['assigned_to']]
+            );
+
+            // 5. Log ticket history
+            $this->logTicketHistory(
+                $ticket->ID,
+                'ASSIGNMENT',
+                'ASSIGNED_TO',
+                null,
+                $assignedToString,
+                $currentUser['emp_id']
+            );
+
+            // 6. Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'ASSIGNMENT',
+                $validated['remarks'] ?? 'Ticket assigned and work in progress',
+                self::STATUS_APPROVED,
+                self::STATUS_IN_PROGRESS,
+                null,
+                $assignedToString,
+                false
+            );
+            // ========== SEND NOTIFICATION ON ASSIGNMENT ==========
+            try {
+                $notificationService = new \App\Services\NotificationService();
+
+                $result = $notificationService->notifyTicketAssigned(
+                    $ticket->TICKET_ID,
+                    $ticket->TYPE_OF_REQUEST,
+                    $assignedToString,
+                    $currentUser['emp_name'],
+                    $ticket->PROJECT_NAME
+                );
+
+                Log::info('Assignment notifications sent: ' . json_encode($result));
+            } catch (\Exception $notifyException) {
+                Log::warning('Notification error in assignment: ' . $notifyException->getMessage());
+            }
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket assigned successfully. Project and task moved to In Progress.',
+                'ticket_id' => $ticket->TICKET_ID,
+                'project_id' => $ticket->PROJECT_NAME,
+                'task_id' => $taskId,
+                'project_status' => 'In Progress',
+                'assigned_to' => $validated['assigned_to'],
+                'next_step' => 'Programmer(s) can now start work on the ticket'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Assignment failed: ' . $e->getMessage()], 500);
+        }
+    }
+    /**
+     * Handle ticket resolution (by assigned programmer)
+     */
+    public function resolveTicket(Request $request, $ticketId)
+    {
+        $validated = $request->validate([
+            'remarks' => 'required|string|min:10|max:1000',
+            'attachments' => 'nullable|array|max:10',
+            'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',
+        ]);
+
+        $ticket = DB::selectOne('
+        SELECT ID, TICKET_ID, STATUS, ASSIGNED_TO, EMPLOYID 
+        FROM tickets 
+        WHERE TICKET_ID = ? AND DELETED_AT IS NULL
+    ', [$ticketId]);
+
+        if (!$ticket) {
+            return response()->json(['error' => 'Ticket not found'], 404);
+        }
+
+        if ($ticket->STATUS !== self::STATUS_IN_PROGRESS) {
+            return response()->json([
+                'error' => 'Only tickets in progress can be resolved'
+            ], 400);
+        }
+
+        $currentUser = session('emp_data');
+        $assignedIds = $this->extractMultipleEmployeeIds($ticket->ASSIGNED_TO ?? '');
+
+        // Verify user is assigned to this ticket
+        if (!in_array($currentUser['emp_id'], $assignedIds)) {
+            return response()->json([
+                'error' => 'You are not assigned to this ticket'
+            ], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update ticket status to RESOLVED
+            DB::table('tickets')
+                ->where('ID', $ticket->ID)
+                ->update([
+                    'STATUS' => self::STATUS_RESOLVED,
+                    'RESOLVED_AT' => now(),
+                    'UPDATED_AT' => now(),
+                ]);
+
+            // Log workflow action
+            $this->logWorkflowAction(
+                $ticket->ID,
+                self::WORKFLOW_RESOLVED,
+                $currentUser['emp_id'],
+                $validated['remarks']
+            );
+
+            // Handle attachments if provided
+            if ($request->hasFile('attachments')) {
+                $this->handleAttachments(
+                    $request->file('attachments'),
+                    $ticketId,
+                    $currentUser['emp_id']
+                );
+            }
+
+            // Log ticket history
+            $this->logTicketHistory(
+                $ticket->ID,
+                'RESOLUTION',
+                'STATUS',
+                $this->getStatusLabel(self::STATUS_IN_PROGRESS),
+                $this->getStatusLabel(self::STATUS_RESOLVED),
+                $currentUser['emp_id']
+            );
+
+            // Insert remark
+            $this->insertRemark(
+                $ticket->ID,
+                $currentUser['emp_id'],
+                'RESOLUTION',
+                $validated['remarks'],
+                self::STATUS_IN_PROGRESS,
+                self::STATUS_RESOLVED,
+                null,
+                null,
+                false
+            );
+            // ========== SEND NOTIFICATION ON RESOLUTION ==========
+            try {
+                $notificationService = new \App\Services\NotificationService();
+
+                // Get full ticket data
+                $ticketFull = DB::selectOne('
+        SELECT EMPLOYID, PROJECT_NAME FROM tickets WHERE ID = ?
+    ', [$ticket->ID]);
+
+                $result = $notificationService->notifyTicketResolved(
+                    $ticket->TICKET_ID,
+                    $ticket->TYPE_OF_REQUEST,
+                    $ticketFull->EMPLOYID,
+                    $currentUser['emp_name'],
+                    $ticketFull->PROJECT_NAME
+                );
+
+                Log::info('Resolution notifications sent: ' . json_encode($result));
+            } catch (\Exception $notifyException) {
+                Log::warning('Notification error in resolution: ' . $notifyException->getMessage());
+            }
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket resolved successfully',
+                'next_step' => 'Waiting for requestor to verify and close the ticket'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Resolution failed: ' . $e->getMessage()], 500);
+        }
+    }
     public function closeTicket(Request $request, $ticketId)
     {
         $validated = $request->validate([

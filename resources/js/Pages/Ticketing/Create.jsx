@@ -32,10 +32,13 @@ const Create = () => {
     const parentFromUrl = parentParam ? atob(parentParam) : null;
     const projectFromUrl = projectParam ? atob(projectParam) : null;
     const userFromUrl = userParam ? atob(userParam) : null;
+    const isNewTicketFromProj = Boolean(projectParam && !parentParam);
     console.log("URL params:", Object.fromEntries(params.entries()));
     console.log("Decoded Parent:", parentFromUrl);
     console.log("Decoded Project:", projectFromUrl);
     console.log("Decoded User:", userFromUrl);
+
+    console.log("isNewTicketFromProj", isNewTicketFromProj);
 
     // ✅ Initialize form data
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -230,6 +233,7 @@ const Create = () => {
                                 {/* Project & Parent Ticket */}
                                 {isChildTicket ? (
                                     <>
+                                        {/* Child Ticket → show both project and parent ticket (readonly) */}
                                         <Form.Item label="Project" required>
                                             <Input
                                                 value={projectFromUrl}
@@ -249,30 +253,47 @@ const Create = () => {
                                             />
                                         </Form.Item>
                                     </>
+                                ) : isNewTicketFromProj ? (
+                                    <>
+                                        {/* New Ticket from Project → show only project (readonly) */}
+                                        <Form.Item label="Project" required>
+                                            <Input
+                                                value={projectFromUrl}
+                                                readOnly
+                                                className="input input-bordered w-full rounded-lg text-sm h-10 bg-base-300"
+                                            />
+                                        </Form.Item>
+                                    </>
                                 ) : isNewSystem ? (
-                                    <Form.Item
-                                        label="Project Name"
-                                        required
-                                        className="col-span-1 md:col-span-2"
-                                        validateStatus={
-                                            errors.project_name ? "error" : ""
-                                        }
-                                        help={errors.project_name}
-                                    >
-                                        <Input
-                                            placeholder="Enter project name"
-                                            value={data.project_name}
-                                            onChange={(e) =>
-                                                setData(
-                                                    "project_name",
-                                                    e.target.value
-                                                )
+                                    <>
+                                        {/* New System → show Project Name input */}
+                                        <Form.Item
+                                            label="Project Name"
+                                            required
+                                            className="col-span-1 md:col-span-2"
+                                            validateStatus={
+                                                errors.project_name
+                                                    ? "error"
+                                                    : ""
                                             }
-                                            className="input input-bordered w-full rounded-lg text-sm h-10"
-                                        />
-                                    </Form.Item>
+                                            help={errors.project_name}
+                                        >
+                                            <Input
+                                                placeholder="Enter project name"
+                                                value={data.project_name}
+                                                onChange={(e) =>
+                                                    setData(
+                                                        "project_name",
+                                                        e.target.value
+                                                    )
+                                                }
+                                                className="input input-bordered w-full rounded-lg text-sm h-10"
+                                            />
+                                        </Form.Item>
+                                    </>
                                 ) : (
                                     <>
+                                        {/* Regular Ticket → show project and optional parent ticket */}
                                         <Form.Item
                                             label="Project"
                                             required

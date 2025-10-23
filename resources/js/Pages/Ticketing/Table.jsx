@@ -11,6 +11,8 @@ import {
     Wrench,
     RefreshCw,
     UserPlus,
+    Lock,
+    BadgeCheckIcon,
 } from "lucide-react";
 import {
     ThunderboltOutlined,
@@ -337,7 +339,9 @@ export default function TicketTable() {
                     approve: <CheckCircle className="w-4 h-4 text-green-600" />,
                     assign: <UserPlus className="w-4 h-4 text-blue-500" />,
                     resolve: <Wrench className="w-4 h-4 text-purple-600" />,
-                    close: <XCircle className="w-4 h-4 text-red-500" />,
+                    close: (
+                        <BadgeCheckIcon className="w-4 h-4 text-green-500" />
+                    ),
                     test: <RefreshCw className="w-4 h-4 text-orange-500" />,
                 };
 

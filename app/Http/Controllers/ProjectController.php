@@ -4,21 +4,35 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
-
 class ProjectController extends Controller
 {
-    // Project Status Constants
+    // -------------------------
+    // Project status constants
+    // -------------------------
     const PROJ_STATUS_PLANNING = 1;
-    const PROJ_STATUS_TRIAGED = 2; // clearer label for triaged
+    const PROJ_STATUS_TRIAGED = 2; // "Ready"
     const PROJ_STATUS_IN_PROGRESS = 3;
     const PROJ_STATUS_ON_HOLD = 4;
     const PROJ_STATUS_DEPLOYED = 5;
     const PROJ_STATUS_CANCELLED = 6;
     const PROJ_STATUS_INACTIVE = 7;
+
+
+    const STATUS_NEW = 1;
+    const STATUS_TRIAGED = 2;
+    const STATUS_APPROVED = 3;
+    const STATUS_IN_PROGRESS = 4;
+    const STATUS_RESOLVED = 5;
+    const STATUS_CLOSED = 6;
+    const STATUS_REJECTED = 7;
+    const STATUS_ON_HOLD = 8;
+    const STATUS_RETURNED = 9; //
+
     protected $statusMapping = [
         'planning' => self::PROJ_STATUS_PLANNING,
         'ready' => self::PROJ_STATUS_TRIAGED,
@@ -37,6 +51,7 @@ class ProjectController extends Controller
     {
         return DB::connection('projects');
     }
+
     public function getProjectsDataTable(Request $request)
     {
         $empData = session('emp_data');
@@ -186,6 +201,7 @@ class ProjectController extends Controller
             'filters' => compact('search', 'department', 'status', 'sortField', 'sortOrder'),
         ])->with('flash', ['message' => 'Projects loaded successfully']);
     }
+
     public function getProjectLogs($projectId)
     {
         $empData = session('emp_data');
@@ -196,7 +212,7 @@ class ProjectController extends Controller
         $logs = $this->projectDB()->table('project_logs')
             ->where('PROJ_ID', $projectId)
             ->orderBy('UPDATE_AT', 'desc')
-            ->paginate(10, [ // ✅ use paginate for frontend pagination
+            ->paginate(10, [
                 'ID',
                 'PROJ_ID',
                 'ACTION_TYPE',
@@ -210,7 +226,6 @@ class ProjectController extends Controller
 
         $statusOptions = $this->getProjectStatusOptions();
 
-        // ✅ Map each log to readable data
         $logs->getCollection()->transform(function ($log) use ($statusOptions) {
             return [
                 'ID' => $log->ID,
@@ -224,9 +239,8 @@ class ProjectController extends Controller
             ];
         });
 
-        return response()->json($logs); // ✅ Return as JSON
+        return response()->json($logs);
     }
-
 
     /**
      * Helper to get project record by name
@@ -416,6 +430,83 @@ class ProjectController extends Controller
         ]);
     }
 
+
+    private function updateProjectStatusFromTickets($projectId)
+    {
+        // Fetch all ticket statuses for the project (use the tickets DB connection if different)
+        $ticketStatuses = DB::table('tickets')
+            ->where('PROJ_ID', $projectId)
+            ->whereNull('DELETED_AT')
+            ->pluck('STATUS')
+            ->toArray();
+
+        if (empty($ticketStatuses)) {
+            return; // no tickets to evaluate
+        }
+
+        // flags
+        $inProgress = in_array(self::STATUS_IN_PROGRESS, $ticketStatuses, true);
+        $onHold     = in_array(self::STATUS_ON_HOLD, $ticketStatuses, true);
+        $resolved   = in_array(self::STATUS_RESOLVED, $ticketStatuses, true);
+        $deployed   = in_array(self::STATUS_CLOSED, $ticketStatuses, true);
+        $cancelled  = in_array(self::STATUS_REJECTED, $ticketStatuses, true);
+        $planning   = in_array(self::STATUS_NEW, $ticketStatuses, true);
+
+        // Treat RESOLVED as "closed/done" for deployment decision.
+        // Check if ALL tickets are in a "done" state (resolved or deployed)
+        $allDone = true;
+        foreach ($ticketStatuses as $s) {
+            if (!in_array($s, [self::STATUS_RESOLVED, self::STATUS_CLOSED], true)) {
+                $allDone = false;
+                break;
+            }
+        }
+
+        // Determine new project status by priority logic
+        if ($inProgress) {
+            $newStatus = self::PROJ_STATUS_IN_PROGRESS;
+        } elseif ($onHold) {
+            $newStatus = self::PROJ_STATUS_ON_HOLD;
+        } elseif ($deployed) {
+            // All tickets finished (resolved/closed or deployed)
+            $newStatus = self::PROJ_STATUS_DEPLOYED;
+        } elseif ($resolved && !$inProgress && !$onHold) {
+            // Some tickets resolved but not all — mark as Ready/Triaged
+            $newStatus = self::PROJ_STATUS_TRIAGED;
+        } elseif ($cancelled && count(array_unique($ticketStatuses)) === 1) {
+            // All cancelled
+            $newStatus = self::PROJ_STATUS_CANCELLED;
+        } elseif ($planning && count(array_unique($ticketStatuses)) === 1) {
+            $newStatus = self::PROJ_STATUS_PLANNING;
+        } else {
+            $newStatus = self::PROJ_STATUS_PLANNING; // default fallback
+        }
+
+        // Get current project status (use projects connection)
+        $currentStatus = $this->projectDB()->table('project_list')
+            ->where('PROJ_ID', $projectId)
+            ->value('PROJ_STATUS');
+
+        // Only update if status changed
+        if ($currentStatus != $newStatus) {
+            $this->projectDB()->table('project_list')
+                ->where('PROJ_ID', $projectId)
+                ->update([
+                    'PROJ_STATUS' => $newStatus,
+                    'UPDATED_AT'  => now(),
+                ]);
+
+            // Log the change
+            $this->logAction(
+                $projectId,
+                'AUTO_UPDATE',
+                "Project status auto-updated from {$currentStatus} to {$newStatus} based on tickets",
+                null,
+                'SYSTEM'
+            );
+        }
+    }
+
     /**
      * Project status label map
      */
@@ -434,11 +525,6 @@ class ProjectController extends Controller
 
     public function importExcel(Request $request)
     {
-        // Log::info('File received:', [
-        //     'hasFile' => $request->hasFile('excel_file'),
-        //     'file' => $request->file('excel_file'),
-        // ]);
-
         $request->validate([
             'excel_file' => 'required|mimes:xlsx,xls,csv|max:2048'
         ]);
@@ -481,11 +567,7 @@ class ProjectController extends Controller
                 try {
                     // Create associative array from row data
                     $data = array_combine($headers, $row);
-                    // // For debugging without stopping execution:
-                    // Log::info('Import data:', ['data' => $data, 'userId' => $userId]);
-                    // Process the row
                     $result = $this->processImportRow($data, $userId);
-                    // dd($result);
                     if ($result['action'] === 'insert') {
                         $imported++;
                     } elseif ($result['action'] === 'update') {
@@ -512,18 +594,17 @@ class ProjectController extends Controller
     {
         // Clean and validate data
         $processedData = $this->cleanImportData($data);
-        // dd($data, $userId);
+
         // Check if project exists (by PROJ_ID if provided, or by PROJ_NAME)
         $existingProject = null;
 
         if (!empty($processedData['PROJ_ID'])) {
-            $existingProject = DB::connection('projects')
+            $existingProject = $this->projectDB()
                 ->table('project_list')
                 ->where('PROJ_ID', $processedData['PROJ_ID'])
                 ->first();
         } else {
-            // Check by project name if no ID provided
-            $existingProject = DB::connection('projects')
+            $existingProject = $this->projectDB()
                 ->table('project_list')
                 ->where('PROJ_NAME', $processedData['PROJ_NAME'])
                 ->first();
@@ -531,7 +612,7 @@ class ProjectController extends Controller
 
         if ($existingProject) {
             // Update existing project
-            DB::connection('projects')->table('project_list')
+            $this->projectDB()->table('project_list')
                 ->where('PROJ_ID', $existingProject->PROJ_ID)
                 ->update([
                     'PROJ_NAME' => $processedData['PROJ_NAME'],
@@ -550,7 +631,7 @@ class ProjectController extends Controller
             return ['action' => 'update', 'id' => $existingProject->PROJ_ID];
         } else {
             // Insert new project
-            DB::connection('projects')->table('project_list')->insert([
+            $this->projectDB()->table('project_list')->insert([
                 'PROJ_NAME' => $processedData['PROJ_NAME'],
                 'PROJ_DESC' => $processedData['PROJ_DESC'] ?? null,
                 'PROJ_DEPT' => $processedData['PROJ_DEPT'],
@@ -613,10 +694,12 @@ class ProjectController extends Controller
         $cleaned['DATE_END'] = isset($data['DATE_END']) && !empty($data['DATE_END'])
             ? date('Y-m-d', strtotime($data['DATE_END']))
             : null;
+
         // TARGET_DEADLINE (optional)
         $cleaned['TARGET_DEADLINE'] = isset($data['TARGET_DEADLINE']) && !empty($data['TARGET_DEADLINE'])
             ? date('Y-m-d', strtotime($data['TARGET_DEADLINE']))
             : null;
+
         // ASSIGNED_PROGS (optional)
         $cleaned['ASSIGNED_PROGS'] = isset($data['ASSIGNED_PROGS']) && !empty($data['ASSIGNED_PROGS'])
             ? implode(',', array_map('trim', explode(',', $data['ASSIGNED_PROGS'])))
@@ -625,13 +708,20 @@ class ProjectController extends Controller
         return $cleaned;
     }
 
-
     private function convertStatusToNumeric($status)
     {
-        // If already numeric, validate and return
+        // If already numeric, validate and return (allow project statuses 1..7)
         if (is_numeric($status)) {
             $numericStatus = (int)$status;
-            if (in_array($numericStatus, [1, 2, 3, 4, 5, 6])) {
+            if (in_array($numericStatus, [
+                self::PROJ_STATUS_PLANNING,
+                self::PROJ_STATUS_TRIAGED,
+                self::PROJ_STATUS_IN_PROGRESS,
+                self::PROJ_STATUS_ON_HOLD,
+                self::PROJ_STATUS_DEPLOYED,
+                self::PROJ_STATUS_CANCELLED,
+                self::PROJ_STATUS_INACTIVE,
+            ], true)) {
                 return $numericStatus;
             }
         }
@@ -663,7 +753,7 @@ class ProjectController extends Controller
             }
         }
 
-        throw new \Exception("Invalid status: $status. Valid options: " . implode(', ', array_keys($this->statusMapping)) . " or numeric values 1-6");
+        throw new \Exception("Invalid status: $status. Valid options: " . implode(', ', array_keys($this->statusMapping)) . " or numeric project values 1-7");
     }
 
     public function downloadTemplate()
