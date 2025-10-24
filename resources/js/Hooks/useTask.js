@@ -7,17 +7,14 @@ import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
 
-export function useTask(tasks) {
+export default function useTask(tasks) {
     const today = dayjs();
 
     // ========================================
     // FILTER STATES
     // ========================================
-    const [selectedDates, setSelectedDates] = useState([
-        today.startOf("day"),
-        today.endOf("day"),
-    ]);
-    const [selectedStatus, setSelectedStatus] = useState(null);
+    const [selectedDates, setSelectedDates] = useState(null);
+    const [selectedStatus, setSelectedStatus] = useState(1);
     const [searchTerm, setSearchTerm] = useState("");
     const [sortKey, setSortKey] = useState(null);
 

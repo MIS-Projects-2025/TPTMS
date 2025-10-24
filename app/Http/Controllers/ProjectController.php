@@ -440,6 +440,7 @@ class ProjectController extends Controller
             $project->PROJ_ID,
             'RESOLVED',
             'Project status updated to In Progress',
+            null,
             $updatedBy,
             $requestType,
             $ticketId

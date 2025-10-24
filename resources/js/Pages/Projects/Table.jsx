@@ -144,7 +144,7 @@ export default function ProjectsTable() {
             width: 70,
             render: (assignedTo) => {
                 if (!assignedTo || assignedTo.length === 0) {
-                    return <span className="text-gray-400">Unassigned</span>;
+                    return <span className="text-gray-400">-</span>;
                 }
 
                 // Only show the first 2 avatars
@@ -187,7 +187,7 @@ export default function ProjectsTable() {
         {
             title: "Active Requests",
             key: "active_requests",
-            width: 200,
+            width: 150,
             render: (_, record) => {
                 if (
                     !record.active_tickets ||

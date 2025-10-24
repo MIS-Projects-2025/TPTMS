@@ -1249,16 +1249,12 @@ class TicketingController extends Controller
             $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket assigned successfully. Project and task moved to In Progress.',
-                'ticket_id' => $ticket->TICKET_ID,
-                'project_id' => $ticket->PROJECT_NAME,
-                'task_id' => $taskId,
-                'project_status' => 'In Progress',
-                'assigned_to' => $validated['assigned_to'],
-                'next_step' => 'Programmer(s) can now start work on the ticket'
-            ]);
+
+            // ===== REDIRECT RESPONSE =====
+            $hash = base64_encode($ticketId . ':VIEW');
+            return redirect()
+                ->route('tickets.view', $hash)
+                ->with('success', 'Ticket assigned successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Assignment failed: ' . $e->getMessage()], 500);
@@ -1380,11 +1376,12 @@ class TicketingController extends Controller
             $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket resolved successfully',
-                'next_step' => 'Waiting for requestor to verify and close the ticket'
-            ]);
+
+            // ===== REDIRECT RESPONSE =====
+            $hash = base64_encode($ticketId . ':VIEW');
+            return redirect()
+                ->route('tickets.view', $hash)
+                ->with('success', 'Ticket resolved successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Resolution failed: ' . $e->getMessage()], 500);
@@ -1536,14 +1533,12 @@ class TicketingController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket closed successfully.',
-                'ticket_id' => $ticket->TICKET_ID,
-                'project_deployed' => $projectDeployed,
-                'project_message' => $projectMessage,
-                'rating' => $validated['rating'] ?? null
-            ]);
+
+            // ===== REDIRECT RESPONSE =====
+            $hash = base64_encode($ticketId . ':VIEW');
+            return redirect()
+                ->route('tickets.view', $hash)
+                ->with('success', 'Ticket Closed successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Closure failed: ' . $e->getMessage()], 500);
@@ -1648,11 +1643,12 @@ class TicketingController extends Controller
             $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket returned to requestor for clarification',
-                'next_step' => 'Waiting for requestor to update ticket details'
-            ]);
+
+            // ===== REDIRECT RESPONSE =====
+            $hash = base64_encode($ticketId . ':VIEW');
+            return redirect()
+                ->route('tickets.view', $hash)
+                ->with('success', 'Ticket Returned successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Return failed: ' . $e->getMessage()], 500);
@@ -1726,10 +1722,12 @@ class TicketingController extends Controller
             $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket resubmitted for reassessment.'
-            ]);
+
+            // ===== REDIRECT RESPONSE =====
+            $hash = base64_encode($ticketId . ':VIEW');
+            return redirect()
+                ->route('tickets.view', $hash)
+                ->with('success', 'Ticket Resubmitted successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Resubmission failed: ' . $e->getMessage()], 500);
@@ -2292,16 +2290,11 @@ class TicketingController extends Controller
             Log::warning('Notification error in assessment: ' . $notifyException->getMessage());
         }
 
-        // ===== RETURN RESPONSE =====
-        return response()->json([
-            'success' => true,
-            'message' => 'Ticket assessed successfully',
-            'next_step' => $this->getPendingAction(
-                self::STATUS_TRIAGED,
-                $ticket->TYPE_OF_REQUEST,
-                $ticket->ID
-            )
-        ]);
+        // ===== REDIRECT RESPONSE =====
+        $hash = base64_encode($ticketId . ':VIEW');
+        return redirect()
+            ->route('tickets.view', $hash)
+            ->with('success', 'Ticket assessed successfully.');
     }
 
     /**
@@ -2356,10 +2349,12 @@ class TicketingController extends Controller
             $assignedTo
         );
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Ticket assigned successfully'
-        ]);
+
+        // ===== REDIRECT RESPONSE =====
+        $hash = base64_encode($ticketId . ':VIEW');
+        return redirect()
+            ->route('tickets.view', $hash)
+            ->with('success', 'Ticket assigned successfully.');
     }
 
     /**
@@ -2460,13 +2455,12 @@ class TicketingController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket approved by Department Head. Project moved to Ready status.',
-                'ticket_id' => $ticket->TICKET_ID,
-                'project_status' => 'Ready',
-                'next_step' => 'Ready for assignment to programmer(s)'
-            ]);
+
+            // ===== REDIRECT RESPONSE =====
+            $hash = base64_encode($ticketId . ':VIEW');
+            return redirect()
+                ->route('tickets.view', $hash)
+                ->with('success', 'Ticket assessed successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Approval failed: ' . $e->getMessage()], 500);
@@ -2550,13 +2544,11 @@ class TicketingController extends Controller
             }
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Ticket approved by Operations Director. Project moved to Ready status.',
-                'ticket_id' => $ticket->TICKET_ID,
-                'project_status' => 'Ready',
-                'next_step' => 'Ready for assignment to programmer(s)'
-            ]);
+            // ===== REDIRECT RESPONSE =====
+            $hash = base64_encode($ticketId . ':VIEW');
+            return redirect()
+                ->route('tickets.view', $hash)
+                ->with('success', 'Ticket assessed successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['error' => 'Approval failed: ' . $e->getMessage()], 500);

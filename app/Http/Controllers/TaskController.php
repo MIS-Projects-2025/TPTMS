@@ -30,6 +30,7 @@ class TaskController extends Controller
     public function getTask()
     {
         $tasks = $this->taskDB()->table('daily_tasks')
+
             ->orderByDesc('CREATED_AT')
             ->get();
 

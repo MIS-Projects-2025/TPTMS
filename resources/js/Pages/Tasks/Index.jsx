@@ -4,7 +4,7 @@ import { usePage } from "@inertiajs/react";
 import { Table, Card, Tag, Empty } from "antd";
 import TaskLayout from "@/Layouts/TaskLayout";
 import TaskNavbar from "@/Components/TaskNavBar";
-import { useTask } from "@/hooks/useTask";
+import useTask from "@/Hooks/useTask";
 
 const TaskIndex = () => {
     const { tasks } = usePage().props;
