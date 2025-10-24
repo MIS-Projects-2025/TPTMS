@@ -87,7 +87,7 @@ Route::prefix('api')->middleware(AuthMiddleware::class)->group(function () {
                     'type' => $notif->data['type'] ?? '',
                     'project' => $notif->data['project_name'] ?? '',
                     'created_at' => $notif->created_at->format('Y-m-d H:i:s'),
-                    'action_required' => $notif->action_required,
+                    'action_required' => $notif->data['action_required'] ?? null,
                     'read_at' => $notif->read_at,
                 ];
             });

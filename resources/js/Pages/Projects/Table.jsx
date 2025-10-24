@@ -47,6 +47,7 @@ export default function ProjectsTable() {
         pagination: logPagination,
         fetchProjectLogs,
     } = useProjectLogs(appName);
+    console.log(projectLogs);
 
     const encodeParams = (params) => btoa(JSON.stringify(params));
 
@@ -180,6 +181,78 @@ export default function ProjectsTable() {
                             </Tooltip>
                         )}
                     </Avatar.Group>
+                );
+            },
+        },
+        {
+            title: "Active Requests",
+            key: "active_requests",
+            width: 200,
+            render: (_, record) => {
+                if (
+                    !record.active_tickets ||
+                    record.active_tickets.length === 0
+                ) {
+                    return <span className="text-gray-400">No tickets</span>;
+                }
+
+                // Show first 2 tickets, rest in tooltip
+                const visible = record.active_tickets.slice(0, 2);
+                const hidden = record.active_tickets.slice(2);
+                const remaining = hidden.length;
+
+                return (
+                    <div className="flex flex-col gap-1">
+                        {visible.map((ticket) => (
+                            <div key={ticket.id} className="flex flex-col">
+                                <span className="font-semibold">
+                                    {ticket.type}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                    {ticket.date_start
+                                        ? new Date(
+                                              ticket.date_start
+                                          ).toLocaleDateString()
+                                        : "-"}{" "}
+                                    -{" "}
+                                    {ticket.date_end
+                                        ? ticket.date_end === "Ongoing"
+                                            ? "Ongoing"
+                                            : new Date(
+                                                  ticket.date_end
+                                              ).toLocaleDateString()
+                                        : "-"}
+                                </span>
+                            </div>
+                        ))}
+
+                        {remaining > 0 && (
+                            <Tooltip
+                                title={hidden
+                                    .map(
+                                        (t) =>
+                                            `${t.type}: ${
+                                                t.date_start
+                                                    ? new Date(
+                                                          t.date_start
+                                                      ).toLocaleDateString()
+                                                    : "-"
+                                            } - ${
+                                                t.date_end === "Ongoing"
+                                                    ? "Ongoing"
+                                                    : new Date(
+                                                          t.date_end
+                                                      ).toLocaleDateString()
+                                            }`
+                                    )
+                                    .join("\n")}
+                            >
+                                <span className="text-xs text-blue-600 cursor-pointer">
+                                    +{remaining} more
+                                </span>
+                            </Tooltip>
+                        )}
+                    </div>
                 );
             },
         },

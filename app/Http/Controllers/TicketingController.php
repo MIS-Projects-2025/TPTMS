@@ -489,9 +489,10 @@ class TicketingController extends Controller
                     $validated['details'],
                     $empData['emp_dept'],
                     $empData['emp_id'],
-                    $empData['emp_id']
+                    $empData['emp_id'],
+                    $validated['request_type'],  // NEW: Pass request type
+                    $ticketId                     // NEW: Pass ticket ID
                 );
-
                 if ($projId) {
                     $projectCreated = true;
                     Log::info('✓ Project created with ID: ' . $projId);
@@ -1180,7 +1181,13 @@ class TicketingController extends Controller
 
             // 2. Update PROJECT to IN_PROGRESS via ProjectController
             $projectController = new ProjectController();
-            $projectController->updateToInProgress($ticket->PROJECT_NAME, $assignedToString, $currentUser['emp_id']);
+            $projectController->updateToInProgress(
+                $ticket->PROJECT_NAME,
+                $assignedToString,
+                $currentUser['emp_id'],
+                $ticket->TYPE_OF_REQUEST,  // NEW: Pass request type
+                $ticket->TICKET_ID         // NEW: Pass ticket ID
+            );
 
             // 3. Create TASK via TaskController
             $taskController = new TaskController();
@@ -1239,6 +1246,7 @@ class TicketingController extends Controller
             } catch (\Exception $notifyException) {
                 Log::warning('Notification error in assignment: ' . $notifyException->getMessage());
             }
+            $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
             return response()->json([
@@ -1267,9 +1275,10 @@ class TicketingController extends Controller
             'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',
         ]);
 
+
         $ticket = DB::selectOne('
-        SELECT ID, TICKET_ID, STATUS, ASSIGNED_TO, EMPLOYID 
-        FROM tickets 
+        SELECT ID, TICKET_ID, STATUS, EMPLOYID, TYPE_OF_REQUEST, PROJECT_NAME,ASSIGNED_TO
+        FROM tickets
         WHERE TICKET_ID = ? AND DELETED_AT IS NULL
     ', [$ticketId]);
 
@@ -1285,6 +1294,7 @@ class TicketingController extends Controller
 
         $currentUser = session('emp_data');
         $assignedIds = $this->extractMultipleEmployeeIds($ticket->ASSIGNED_TO ?? '');
+        // dd($assignedIds, $currentUser['emp_id'], session('emp_data'));
 
         // Verify user is assigned to this ticket
         if (!in_array($currentUser['emp_id'], $assignedIds)) {
@@ -1303,6 +1313,15 @@ class TicketingController extends Controller
                     'RESOLVED_AT' => now(),
                     'UPDATED_AT' => now(),
                 ]);
+
+            // 2. Update PROJECT to IN_PROGRESS via ProjectController
+            $projectController = new ProjectController();
+            $projectController->updateToResolve(
+                $ticket->PROJECT_NAME,
+                $currentUser['emp_id'],
+                $ticket->TYPE_OF_REQUEST,  // NEW: Pass request type
+                $ticket->TICKET_ID         // NEW: Pass ticket ID
+            );
 
             // Log workflow action
             $this->logWorkflowAction(
@@ -1346,24 +1365,19 @@ class TicketingController extends Controller
             // ========== SEND NOTIFICATION ON RESOLUTION ==========
             try {
                 $notificationService = new \App\Services\NotificationService();
-
-                // Get full ticket data
-                $ticketFull = DB::selectOne('
-        SELECT EMPLOYID, PROJECT_NAME FROM tickets WHERE ID = ?
-    ', [$ticket->ID]);
-
                 $result = $notificationService->notifyTicketResolved(
                     $ticket->TICKET_ID,
                     $ticket->TYPE_OF_REQUEST,
-                    $ticketFull->EMPLOYID,
+                    $ticket->EMPLOYID,
                     $currentUser['emp_name'],
-                    $ticketFull->PROJECT_NAME
+                    $ticket->PROJECT_NAME
                 );
-
-                Log::info('Resolution notifications sent: ' . json_encode($result));
+                Log::info('Resolved notifications sent: ' . json_encode($result));
             } catch (\Exception $notifyException) {
-                Log::warning('Notification error in resolution: ' . $notifyException->getMessage());
+                Log::warning('Notification error in Resolved: ' . $notifyException->getMessage());
             }
+
+            $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
             return response()->json([
@@ -1447,10 +1461,30 @@ class TicketingController extends Controller
                     'UPDATED_AT' => now(),
                 ]);
 
-            // 2. Update PROJECT to CLOSED via ProjectController
+            // 2. Try to update PROJECT to DEPLOYED (will fail if other tickets are open)
+            $projectDeployed = false;
+            $projectMessage = '';
+
             if ($ticket->PROJECT_NAME) {
                 $projectController = new ProjectController();
-                $projectController->updateToDeployed($ticket->PROJECT_NAME, $userId);
+                try {
+                    // This will throw exception if there are still open tickets
+                    $projectController->updateToDeployed(
+                        $ticket->PROJECT_NAME,
+                        $userId,
+                        $ticket->TYPE_OF_REQUEST,
+                        $ticket->TICKET_ID
+                    );
+                    $projectDeployed = true;
+                    $projectMessage = 'Project has been deployed - all tickets are closed.';
+                } catch (\Exception $projException) {
+                    // Project can't be deployed yet, but ticket can still be closed
+                    Log::info('Project not deployed yet: ' . $projException->getMessage());
+                    $projectMessage = $projException->getMessage();
+
+                    // Auto-update project status based on remaining open tickets
+                    $projectController->updateProjectStatusFromTickets($ticket->PROJECT_NAME);
+                }
             }
 
             // 3. Log workflow action
@@ -1485,7 +1519,7 @@ class TicketingController extends Controller
                 false
             );
 
-            // ===== 6. SEND NOTIFICATION ON CLOSURE =====
+            // 6. Send notification
             try {
                 $notificationService = new \App\Services\NotificationService();
                 $result = $notificationService->notifyTicketClosed(
@@ -1504,9 +1538,10 @@ class TicketingController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Ticket closed successfully. Project moved to Closed status.',
+                'message' => 'Ticket closed successfully.',
                 'ticket_id' => $ticket->TICKET_ID,
-                'project_status' => 'Closed',
+                'project_deployed' => $projectDeployed,
+                'project_message' => $projectMessage,
                 'rating' => $validated['rating'] ?? null
             ]);
         } catch (\Exception $e) {
@@ -1514,7 +1549,19 @@ class TicketingController extends Controller
             return response()->json(['error' => 'Closure failed: ' . $e->getMessage()], 500);
         }
     }
+    private function syncProjectStatus($projectName)
+    {
+        if (empty($projectName)) {
+            return;
+        }
 
+        try {
+            $projectController = new ProjectController();
+            $projectController->updateProjectStatusFromTickets($projectName);
+        } catch (\Exception $e) {
+            Log::warning('Failed to sync project status: ' . $e->getMessage());
+        }
+    }
     public function returnTicket(Request $request, $ticketId)
     {
         $validated = $request->validate([
@@ -1522,8 +1569,8 @@ class TicketingController extends Controller
         ]);
 
         $ticket = DB::selectOne('
-        SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST, EMPLOYID, PROJECT_NAME
-        FROM tickets 
+        SELECT ID, TICKET_ID, STATUS, EMPLOYID, TYPE_OF_REQUEST, PROJECT_NAME
+        FROM tickets
         WHERE TICKET_ID = ? AND DELETED_AT IS NULL
     ', [$ticketId]);
 
@@ -1598,7 +1645,7 @@ class TicketingController extends Controller
             } catch (\Exception $notifyException) {
                 Log::warning('Notification error in return: ' . $notifyException->getMessage());
             }
-
+            $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
             return response()->json([
@@ -1676,7 +1723,7 @@ class TicketingController extends Controller
             } catch (\Exception $notifyException) {
                 Log::warning('Notification error in resubmission: ' . $notifyException->getMessage());
             }
-
+            $this->syncProjectStatus($ticket->PROJECT_NAME ?? null);
             DB::commit();
 
             return response()->json([
@@ -1741,8 +1788,8 @@ class TicketingController extends Controller
         ]);
 
         $ticket = DB::selectOne('
-        SELECT ID, TICKET_ID, STATUS, TYPE_OF_REQUEST 
-        FROM tickets 
+        SELECT ID, TICKET_ID, STATUS, EMPLOYID, TYPE_OF_REQUEST, PROJECT_NAME
+        FROM tickets
         WHERE TICKET_ID = ? AND DELETED_AT IS NULL
     ', [$ticketId]);
 
@@ -1892,7 +1939,8 @@ class TicketingController extends Controller
         }
 
         $ticket = DB::selectOne('
-        SELECT * FROM tickets 
+        SELECT ID, TICKET_ID, STATUS, EMPLOYID, TYPE_OF_REQUEST, PROJECT_NAME
+        FROM tickets
         WHERE TICKET_ID = ? AND DELETED_AT IS NULL
     ', [$ticketId]);
 
@@ -2374,7 +2422,9 @@ class TicketingController extends Controller
             $projectController->updateToReady(
                 $ticket->PROJECT_NAME,
                 'DH_APPROVED',
-                $currentUser['emp_id']
+                $currentUser['emp_id'],
+                $ticket->TYPE_OF_REQUEST,
+                $ticket->TICKET_ID
             );
 
             // 3. Log workflow action
@@ -2458,7 +2508,13 @@ class TicketingController extends Controller
 
             // 2. Update PROJECT to READY
             $projectController = new ProjectController();
-            $projectController->updateToReady($ticket->PROJECT_NAME, 'OD_APPROVED', $currentUser['emp_id']);
+            $projectController->updateToReady(
+                $ticket->PROJECT_NAME,
+                'OD_APPROVED',
+                $currentUser['emp_id'],
+                $ticket->TYPE_OF_REQUEST,  // NEW: Pass request type
+                $ticket->TICKET_ID         // NEW: Pass ticket ID
+            );
 
             // 3. Log workflow action
             $this->logWorkflowAction(

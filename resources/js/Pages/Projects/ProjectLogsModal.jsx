@@ -57,47 +57,65 @@ export default function ProjectLogsModal({
                                     {label}
                                 </h3>
                                 <Timeline
-                                    items={group.map((log) => ({
-                                        color:
-                                            log.PROJ_STATUS === "Deployed"
-                                                ? "green"
-                                                : log.PROJ_STATUS ===
-                                                  "In Progress"
-                                                ? "blue"
-                                                : log.PROJ_STATUS === "Ready"
-                                                ? "orange"
-                                                : "gray",
-                                        children: (
-                                            <div>
-                                                <div className="flex justify-between items-center">
-                                                    <h4 className="font-semibold text-base">
-                                                        {log.ACTION_TYPE}
-                                                    </h4>
-                                                    <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                        <Clock className="w-3 h-3" />
-                                                        {new Date(
-                                                            log.UPDATE_AT
-                                                        ).toLocaleString()}
-                                                    </span>
+                                    items={group
+                                        .sort(
+                                            (a, b) =>
+                                                new Date(b.UPDATE_AT) -
+                                                new Date(a.UPDATE_AT)
+                                        ) // sort oldest → newest
+                                        .map((log) => ({
+                                            color:
+                                                log.PROJ_STATUS === "Deployed"
+                                                    ? "green"
+                                                    : log.PROJ_STATUS ===
+                                                      "In Progress"
+                                                    ? "blue"
+                                                    : log.PROJ_STATUS ===
+                                                      "Ready"
+                                                    ? "orange"
+                                                    : "gray",
+                                            children: (
+                                                <div>
+                                                    <div className="flex justify-between items-center">
+                                                        <h4 className="font-semibold text-base">
+                                                            {log.ACTION_TYPE}
+                                                        </h4>
+                                                        <span className="text-xs text-gray-500 flex items-center gap-1">
+                                                            <Clock className="w-3 h-3" />
+                                                            {new Date(
+                                                                log.UPDATE_AT
+                                                            ).toLocaleString()}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-600 mt-1">
+                                                        {log.DESCRIPTION ||
+                                                            "No description provided"}
+                                                    </p>
+                                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                                        <Tag color="blue">
+                                                            v
+                                                            {
+                                                                log.PROJECT_VERSION
+                                                            }
+                                                        </Tag>
+                                                        <Tag color="purple">
+                                                            {log.PROJ_STATUS}
+                                                        </Tag>
+                                                        <Tag color="geekblue">
+                                                            {log.ACTION_BY}
+                                                        </Tag>
+                                                        <Tag color="magenta">
+                                                            {log.REQUEST_TYPE}
+                                                        </Tag>{" "}
+                                                        {/* added */}
+                                                        <Tag color="gold">
+                                                            {log.TICKET_ID}
+                                                        </Tag>{" "}
+                                                        {/* added */}
+                                                    </div>
                                                 </div>
-                                                <p className="text-sm text-gray-600 mt-1">
-                                                    {log.DESCRIPTION ||
-                                                        "No description provided"}
-                                                </p>
-                                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                                                    <Tag color="blue">
-                                                        v{log.PROJECT_VERSION}
-                                                    </Tag>
-                                                    <Tag color="purple">
-                                                        {log.PROJ_STATUS}
-                                                    </Tag>
-                                                    <Tag color="geekblue">
-                                                        {log.ACTION_BY}
-                                                    </Tag>
-                                                </div>
-                                            </div>
-                                        ),
-                                    }))}
+                                            ),
+                                        }))}
                                 />
                             </div>
                         ))}

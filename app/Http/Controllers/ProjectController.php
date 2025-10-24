@@ -22,7 +22,6 @@ class ProjectController extends Controller
     const PROJ_STATUS_CANCELLED = 6;
     const PROJ_STATUS_INACTIVE = 7;
 
-
     const STATUS_NEW = 1;
     const STATUS_TRIAGED = 2;
     const STATUS_APPROVED = 3;
@@ -31,7 +30,15 @@ class ProjectController extends Controller
     const STATUS_CLOSED = 6;
     const STATUS_REJECTED = 7;
     const STATUS_ON_HOLD = 8;
-    const STATUS_RETURNED = 9; //
+    const STATUS_RETURNED = 9;
+
+    // Request Type Constants (from TicketingController)
+    const REQUEST_NEW_SYSTEM = 1;
+    const REQUEST_MODIFICATION = 2;
+    const REQUEST_ENHANCEMENT = 3;
+    const REQUEST_ADJUSTMENT = 4;
+    const REQUEST_TESTING = 5;
+    const REQUEST_PARALLEL_RUN = 6;
 
     protected $statusMapping = [
         'planning' => self::PROJ_STATUS_PLANNING,
@@ -50,6 +57,22 @@ class ProjectController extends Controller
     protected function projectDB()
     {
         return DB::connection('projects');
+    }
+
+    /**
+     * Get request type label
+     */
+    private function getRequestTypeLabel($requestType)
+    {
+        $labels = [
+            self::REQUEST_NEW_SYSTEM => 'New System',
+            self::REQUEST_MODIFICATION => 'Modification',
+            self::REQUEST_ENHANCEMENT => 'Enhancement',
+            self::REQUEST_ADJUSTMENT => 'Adjustment',
+            self::REQUEST_TESTING => 'Testing',
+            self::REQUEST_PARALLEL_RUN => 'Parallel Run',
+        ];
+        return $labels[$requestType] ?? 'Unknown';
     }
 
     public function getProjectsDataTable(Request $request)
@@ -137,15 +160,9 @@ class ProjectController extends Controller
                         ->get();
 
                     $assignedTo = $employees->map(function ($emp) {
-                        // Tooltip: Full name with middle initial (e.g., "Juan A Dela Cruz")
                         $fullName = trim($emp->FIRSTNAME . ' ' . $emp->MIDDLE_INITIAL . ' ' . $emp->LASTNAME);
-                        // Get the first letter of first name
                         $firstInitial = !empty($emp->FIRSTNAME) ? strtoupper(substr($emp->FIRSTNAME, 0, 1)) : '';
-
-                        // Get the first letter of last name
                         $lastInitial = !empty($emp->LASTNAME) ? strtoupper(substr($emp->LASTNAME, 0, 1)) : '';
-
-                        // Combine initials
                         $tableInitial = $firstInitial . $lastInitial;
 
                         return [
@@ -157,6 +174,55 @@ class ProjectController extends Controller
                 }
             }
 
+            // Get tickets based on project status
+            $activeTickets = [];
+
+            if ($project->PROJ_STATUS != self::PROJ_STATUS_DEPLOYED) {
+                // For non-deployed projects, get active tickets
+                $activeTickets = DB::table('tickets')
+                    ->where('PROJECT_NAME', $project->PROJ_NAME)
+                    ->whereNull('DELETED_AT')
+                    ->whereNull('CLOSED_AT') // active tickets only
+                    ->orderBy('CREATED_AT', 'desc')
+                    ->get()
+                    ->map(function ($ticket) {
+                        $assignmentLog = DB::table('ticket_workflow')
+                            ->where('TICKET_ID', $ticket->ID)
+                            ->where('ACTION_TYPE', 'ASSIGNED')
+                            ->orderBy('ACTION_AT', 'asc')
+                            ->first();
+
+                        return [
+                            'id' => $ticket->ID,
+                            'type' => $this->getRequestTypeLabel($ticket->TYPE_OF_REQUEST),
+                            'date_start' => $assignmentLog->ACTION_AT ?? null,
+                            'date_end' => $ticket->CLOSED_AT ?? "Ongoing",
+                        ];
+                    })
+                    ->toArray();
+            } else {
+                // For deployed projects, get only the latest ticket (active or closed)
+                $latestTicket = DB::table('tickets')
+                    ->where('PROJECT_NAME', $project->PROJ_NAME)
+                    ->whereNull('DELETED_AT')
+                    ->orderBy('CREATED_AT', 'desc')
+                    ->first();
+
+                if ($latestTicket) {
+                    $assignmentLog = DB::table('ticket_workflow')
+                        ->where('TICKET_ID', $latestTicket->ID)
+                        ->where('ACTION_TYPE', 'ASSIGNED')
+                        ->orderBy('ACTION_AT', 'asc')
+                        ->first();
+
+                    $activeTickets[] = [
+                        'id' => $latestTicket->ID,
+                        'type' => $this->getRequestTypeLabel($latestTicket->TYPE_OF_REQUEST),
+                        'date_start' => $assignmentLog->ACTION_AT ?? null,
+                        'date_end' => $latestTicket->CLOSED_AT ?? "Ongoing",
+                    ];
+                }
+            }
             return [
                 'id' => $project->PROJ_ID,
                 'name' => $project->PROJ_NAME,
@@ -165,6 +231,7 @@ class ProjectController extends Controller
                 'status' => $statusOptions[$project->PROJ_STATUS] ?? 'Unknown',
                 'assigned_to' => $assignedTo,
                 'created_at' => $project->CREATED_AT,
+                'active_tickets' => $activeTickets, // ✅ all active tickets
             ];
         });
 
@@ -220,6 +287,8 @@ class ProjectController extends Controller
                 'PROJECT_VERSION',
                 'PROJ_STATUS',
                 'ASSIGNED_PROGS',
+                'REQUEST_TYPE',
+                'TICKET_ID',
                 'ACTION_BY',
                 'UPDATE_AT',
             ]);
@@ -234,10 +303,13 @@ class ProjectController extends Controller
                 'PROJECT_VERSION' => $log->PROJECT_VERSION,
                 'PROJ_STATUS' => $statusOptions[$log->PROJ_STATUS] ?? $log->PROJ_STATUS,
                 'ASSIGNED_PROGS' => $log->ASSIGNED_PROGS,
+                'REQUEST_TYPE' => isset($log->REQUEST_TYPE) ? $this->getRequestTypeLabel($log->REQUEST_TYPE) : null,
+                'TICKET_ID' => $log->TICKET_ID ?? null,
                 'ACTION_BY' => $log->ACTION_BY,
                 'UPDATE_AT' => $log->UPDATE_AT,
             ];
         });
+
 
         return response()->json($logs);
     }
@@ -252,11 +324,8 @@ class ProjectController extends Controller
             ->first();
     }
 
-    /**
-     * Create project from ticket
-     * Status: PLANNING (1)
-     */
-    public function createFromTicket($projectName, $description, $department, $requestorId, $createdBy)
+
+    public function createFromTicket($projectName, $description, $department, $requestorId, $createdBy, $requestType = null, $ticketId = null)
     {
         $projId = $this->projectDB()->table('project_list')->insertGetId([
             'PROJ_NAME' => $projectName ?? 'New Project',
@@ -273,7 +342,15 @@ class ProjectController extends Controller
             'UPDATED_AT' => now(),
         ]);
 
-        $this->logAction($projId, 'CREATED', 'Project created from ticket', null, $createdBy);
+        $this->logAction(
+            $projId,
+            'CREATED',
+            'Project created from ticket',
+            null,
+            $createdBy,
+            $requestType,
+            $ticketId
+        );
 
         return $projId;
     }
@@ -281,7 +358,7 @@ class ProjectController extends Controller
     /**
      * Update project status to READY (2)
      */
-    public function updateToReady($projectName, $approvalType, $updatedBy)
+    public function updateToReady($projectName, $approvalType, $updatedBy, $requestType = null, $ticketId = null)
     {
         $project = $this->getProjectByName($projectName);
         if (!$project) {
@@ -296,36 +373,82 @@ class ProjectController extends Controller
                 'UPDATED_BY' => $updatedBy,
             ]);
 
-        $this->logAction($project->PROJ_ID, $approvalType, 'Project status updated to Ready', null, $updatedBy);
+        $this->logAction(
+            $project->PROJ_ID,
+            $approvalType,
+            'Project status updated to Ready',
+            null,
+            $updatedBy,
+            $requestType,
+            $ticketId
+        );
     }
 
     /**
      * Update project status to IN_PROGRESS (3)
      */
-    public function updateToInProgress($projectName, $assignedPrograms, $updatedBy)
+    public function updateToInProgress($projectName, $assignedPrograms, $updatedBy, $requestType = null, $ticketId = null)
     {
         $project = $this->getProjectByName($projectName);
         if (!$project) {
             throw new \Exception("Project not found: $projectName");
         }
 
+        // Get the earliest DATE_START if it exists, otherwise use now()
+        $dateStart = $project->DATE_START ?? now();
+
         $this->projectDB()->table('project_list')
             ->where('PROJ_ID', $project->PROJ_ID)
             ->update([
                 'PROJ_STATUS' => self::PROJ_STATUS_IN_PROGRESS,
                 'ASSIGNED_PROGS' => $assignedPrograms,
-                'DATE_START' => now(),
+                'DATE_START' => $dateStart,
                 'UPDATED_AT' => now(),
                 'UPDATED_BY' => $updatedBy,
             ]);
 
-        $this->logAction($project->PROJ_ID, 'ASSIGNED', 'Project status updated to In Progress', $assignedPrograms, $updatedBy);
+        $this->logAction(
+            $project->PROJ_ID,
+            'ASSIGNED',
+            'Project status updated to In Progress',
+            $assignedPrograms,
+            $updatedBy,
+            $requestType,
+            $ticketId
+        );
     }
+    public function updateToResolve($projectName,  $updatedBy, $requestType = null, $ticketId = null)
+    {
+        $project = $this->getProjectByName($projectName);
+        if (!$project) {
+            throw new \Exception("Project not found: $projectName");
+        }
 
+        // Get the earliest DATE_START if it exists, otherwise use now()
+        $dateStart = $project->DATE_START ?? now();
+
+        $this->projectDB()->table('project_list')
+            ->where('PROJ_ID', $project->PROJ_ID)
+            ->update([
+                'PROJ_STATUS' => self::PROJ_STATUS_IN_PROGRESS,
+                'DATE_START' => $dateStart,
+                'UPDATED_AT' => now(),
+                'UPDATED_BY' => $updatedBy,
+            ]);
+
+        $this->logAction(
+            $project->PROJ_ID,
+            'RESOLVED',
+            'Project status updated to In Progress',
+            $updatedBy,
+            $requestType,
+            $ticketId
+        );
+    }
     /**
      * Update project status to ON_HOLD (4)
      */
-    public function updateToOnHold($projectName, $updatedBy)
+    public function updateToOnHold($projectName, $updatedBy, $requestType = null, $ticketId = null)
     {
         $project = $this->getProjectByName($projectName);
         if (!$project) {
@@ -340,35 +463,73 @@ class ProjectController extends Controller
                 'UPDATED_BY' => $updatedBy,
             ]);
 
-        $this->logAction($project->PROJ_ID, 'ON_HOLD', 'Project status updated to On Hold', null, $updatedBy);
+        $this->logAction(
+            $project->PROJ_ID,
+            'ON_HOLD',
+            'Project status updated to On Hold',
+            null,
+            $updatedBy,
+            $requestType,
+            $ticketId
+        );
     }
 
     /**
      * Update project status to DEPLOYED (5)
+     * Only if ALL tickets for this project are CLOSED
      */
-    public function updateToDeployed($projectName, $updatedBy)
+    public function updateToDeployed($projectName, $updatedBy, $requestType = null, $ticketId = null)
     {
         $project = $this->getProjectByName($projectName);
         if (!$project) {
             throw new \Exception("Project not found: $projectName");
         }
 
+        // Check if there are any open tickets for this project
+        $openTickets = DB::table('tickets')
+            ->where('PROJECT_NAME', $projectName)
+            ->whereNull('DELETED_AT')
+            ->whereNotIn('STATUS', [self::STATUS_CLOSED, self::STATUS_REJECTED])
+            ->count();
+
+        if ($openTickets > 0) {
+            throw new \Exception("Cannot deploy project. There are still {$openTickets} open ticket(s) for this project.");
+        }
+
+        // Get the latest closed ticket date as DATE_END
+        $lastClosedTicket = DB::table('tickets')
+            ->where('PROJECT_NAME', $projectName)
+            ->where('STATUS', self::STATUS_CLOSED)
+            ->whereNull('DELETED_AT')
+            ->orderBy('CLOSED_AT', 'desc')
+            ->first();
+
+        $dateEnd = $lastClosedTicket ? $lastClosedTicket->CLOSED_AT : now();
+
         $this->projectDB()->table('project_list')
             ->where('PROJ_ID', $project->PROJ_ID)
             ->update([
                 'PROJ_STATUS' => self::PROJ_STATUS_DEPLOYED,
-                'DATE_END' => now(),
+                'DATE_END' => $dateEnd,
                 'UPDATED_AT' => now(),
                 'UPDATED_BY' => $updatedBy,
             ]);
 
-        $this->logAction($project->PROJ_ID, 'DEPLOYED', 'Project status updated to Deployed', null, $updatedBy);
+        $this->logAction(
+            $project->PROJ_ID,
+            'DEPLOYED',
+            'Project status updated to Deployed - All tickets closed',
+            null,
+            $updatedBy,
+            $requestType,
+            $ticketId
+        );
     }
 
     /**
      * Update project status to CANCELLED (6)
      */
-    public function updateToCancelled($projectName, $updatedBy)
+    public function updateToCancelled($projectName, $updatedBy, $requestType = null, $ticketId = null)
     {
         $project = $this->getProjectByName($projectName);
         if (!$project) {
@@ -384,13 +545,21 @@ class ProjectController extends Controller
                 'UPDATED_BY' => $updatedBy,
             ]);
 
-        $this->logAction($project->PROJ_ID, 'CANCELLED', 'Project status updated to Cancelled', null, $updatedBy);
+        $this->logAction(
+            $project->PROJ_ID,
+            'CANCELLED',
+            'Project status updated to Cancelled',
+            null,
+            $updatedBy,
+            $requestType,
+            $ticketId
+        );
     }
 
     /**
      * Update project status to INACTIVE (7)
      */
-    public function updateToInactive($projectName, $updatedBy)
+    public function updateToInactive($projectName, $updatedBy, $requestType = null, $ticketId = null)
     {
         $project = $this->getProjectByName($projectName);
         if (!$project) {
@@ -405,13 +574,21 @@ class ProjectController extends Controller
                 'UPDATED_BY' => $updatedBy,
             ]);
 
-        $this->logAction($project->PROJ_ID, 'INACTIVE', 'Project status updated to Inactive', null, $updatedBy);
+        $this->logAction(
+            $project->PROJ_ID,
+            'INACTIVE',
+            'Project status updated to Inactive',
+            null,
+            $updatedBy,
+            $requestType,
+            $ticketId
+        );
     }
 
     /**
-     * Log project actions in project_logs
+     * Log project actions in project_logs with request type and ticket ID
      */
-    public function logAction($projId, $actionType, $description, $assignedProgs, $actionBy)
+    public function logAction($projId, $actionType, $description, $assignedProgs, $actionBy, $requestType = null, $ticketId = null)
     {
         $project = $this->projectDB()->table('project_list')
             ->select('PROJECT_VERSION', 'PROJ_STATUS')
@@ -425,84 +602,92 @@ class ProjectController extends Controller
             'PROJECT_VERSION' => $project->PROJECT_VERSION ?? '1.0',
             'PROJ_STATUS' => $project->PROJ_STATUS ?? null,
             'ASSIGNED_PROGS' => $assignedProgs,
+            'REQUEST_TYPE' => $requestType,
+            'TICKET_ID' => $ticketId,
             'ACTION_BY' => $actionBy,
             'UPDATE_AT' => now(),
         ]);
     }
 
-
-    private function updateProjectStatusFromTickets($projectId)
+    /**
+     * Auto-update project status based on all tickets
+     */
+    public function updateProjectStatusFromTickets($projectName)
     {
-        // Fetch all ticket statuses for the project (use the tickets DB connection if different)
-        $ticketStatuses = DB::table('tickets')
-            ->where('PROJ_ID', $projectId)
+        $project = $this->getProjectByName($projectName);
+        if (!$project) {
+            return;
+        }
+
+        // Fetch all ticket statuses for the project
+        $tickets = DB::table('tickets')
+            ->where('PROJECT_NAME', $projectName)
             ->whereNull('DELETED_AT')
-            ->pluck('STATUS')
-            ->toArray();
+            ->get();
 
-        if (empty($ticketStatuses)) {
-            return; // no tickets to evaluate
+        if ($tickets->isEmpty()) {
+            return;
         }
 
-        // flags
-        $inProgress = in_array(self::STATUS_IN_PROGRESS, $ticketStatuses, true);
-        $onHold     = in_array(self::STATUS_ON_HOLD, $ticketStatuses, true);
-        $resolved   = in_array(self::STATUS_RESOLVED, $ticketStatuses, true);
-        $deployed   = in_array(self::STATUS_CLOSED, $ticketStatuses, true);
-        $cancelled  = in_array(self::STATUS_REJECTED, $ticketStatuses, true);
-        $planning   = in_array(self::STATUS_NEW, $ticketStatuses, true);
+        $ticketStatuses = $tickets->pluck('STATUS')->toArray();
 
-        // Treat RESOLVED as "closed/done" for deployment decision.
-        // Check if ALL tickets are in a "done" state (resolved or deployed)
-        $allDone = true;
-        foreach ($ticketStatuses as $s) {
-            if (!in_array($s, [self::STATUS_RESOLVED, self::STATUS_CLOSED], true)) {
-                $allDone = false;
-                break;
-            }
+        // Check ticket status distribution
+        $hasNew = in_array(self::STATUS_NEW, $ticketStatuses, true);
+        $hasTriaged = in_array(self::STATUS_TRIAGED, $ticketStatuses, true);
+        $hasInProgress = in_array(self::STATUS_IN_PROGRESS, $ticketStatuses, true);
+        $hasOnHold = in_array(self::STATUS_ON_HOLD, $ticketStatuses, true);
+        $hasResolved = in_array(self::STATUS_RESOLVED, $ticketStatuses, true);
+
+        // Count closed and total tickets
+        $closedCount = 0;
+        $rejectedCount = 0;
+        foreach ($ticketStatuses as $status) {
+            if ($status == self::STATUS_CLOSED) $closedCount++;
+            if ($status == self::STATUS_REJECTED) $rejectedCount++;
         }
 
-        // Determine new project status by priority logic
-        if ($inProgress) {
+        $allTicketsClosed = ($closedCount + $rejectedCount) === count($ticketStatuses);
+        $allTicketsClosedOnly = $closedCount === count($ticketStatuses);
+
+        // Determine new project status with priority logic
+        if ($hasResolved || $hasInProgress) {
             $newStatus = self::PROJ_STATUS_IN_PROGRESS;
-        } elseif ($onHold) {
+        } elseif ($hasOnHold) {
             $newStatus = self::PROJ_STATUS_ON_HOLD;
-        } elseif ($deployed) {
-            // All tickets finished (resolved/closed or deployed)
+        } elseif ($allTicketsClosedOnly) {
+            // All tickets are CLOSED (not rejected) - deploy project
             $newStatus = self::PROJ_STATUS_DEPLOYED;
-        } elseif ($resolved && !$inProgress && !$onHold) {
-            // Some tickets resolved but not all — mark as Ready/Triaged
-            $newStatus = self::PROJ_STATUS_TRIAGED;
-        } elseif ($cancelled && count(array_unique($ticketStatuses)) === 1) {
-            // All cancelled
+        } elseif ($allTicketsClosed && $rejectedCount === count($ticketStatuses)) {
+            // All tickets rejected
             $newStatus = self::PROJ_STATUS_CANCELLED;
-        } elseif ($planning && count(array_unique($ticketStatuses)) === 1) {
+        } elseif ($hasTriaged) {
+            $newStatus = self::PROJ_STATUS_TRIAGED;
+        } elseif ($hasNew) {
             $newStatus = self::PROJ_STATUS_PLANNING;
         } else {
-            $newStatus = self::PROJ_STATUS_PLANNING; // default fallback
+            $newStatus = self::PROJ_STATUS_PLANNING;
         }
 
-        // Get current project status (use projects connection)
-        $currentStatus = $this->projectDB()->table('project_list')
-            ->where('PROJ_ID', $projectId)
-            ->value('PROJ_STATUS');
-
         // Only update if status changed
-        if ($currentStatus != $newStatus) {
+        if ($project->PROJ_STATUS != $newStatus) {
+            // Get latest ticket info for logging
+            $latestTicket = $tickets->sortByDesc('CREATED_AT')->first();
+
             $this->projectDB()->table('project_list')
-                ->where('PROJ_ID', $projectId)
+                ->where('PROJ_ID', $project->PROJ_ID)
                 ->update([
                     'PROJ_STATUS' => $newStatus,
-                    'UPDATED_AT'  => now(),
+                    'UPDATED_AT' => now(),
                 ]);
 
-            // Log the change
             $this->logAction(
-                $projectId,
+                $project->PROJ_ID,
                 'AUTO_UPDATE',
-                "Project status auto-updated from {$currentStatus} to {$newStatus} based on tickets",
+                "Project status auto-updated from {$project->PROJ_STATUS} to {$newStatus} based on ticket statuses",
                 null,
-                'SYSTEM'
+                'SYSTEM',
+                $latestTicket->TYPE_OF_REQUEST ?? null,
+                $latestTicket->TICKET_ID ?? null
             );
         }
     }

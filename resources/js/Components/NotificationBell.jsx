@@ -7,6 +7,7 @@ export default function NotificationBell() {
     const dropdownRef = useRef(null);
     const { notifications, unreadCount, markAsRead, markAllAsRead } =
         useNotifications();
+    console.log(notifications);
 
     // Close dropdown when clicking outside
     useEffect(() => {
