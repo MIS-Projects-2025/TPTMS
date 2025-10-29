@@ -195,12 +195,13 @@ class TaskController extends Controller
             return response()->json(['error' => 'Task not found'], 404);
         }
 
-
-        $this->taskDB()->table('daily_tasks')->insert([
-
-            'PROGRESS_NOTES'        => $validated['note'],
-
-        ]);
+        // ✅ Update existing progress note instead of inserting a new record
+        $this->taskDB()->table('daily_tasks')
+            ->where('TASK_ID', $taskId)
+            ->update([
+                'PROGRESS_NOTES' => $validated['note'],
+                'UPDATED_AT' => now(),
+            ]);
 
         // ✅ Log the note action
         $this->logAction(
@@ -215,7 +216,7 @@ class TaskController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Note added successfully',
+            'message' => 'Progress note updated successfully',
         ]);
     }
 
