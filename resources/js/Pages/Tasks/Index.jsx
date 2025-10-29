@@ -1,25 +1,11 @@
-// Pages/TaskIndex.jsx
 import React, { useState } from "react";
 import { usePage, router } from "@inertiajs/react";
-import {
-    Table,
-    Card,
-    Tag,
-    Empty,
-    Button,
-    Dropdown,
-    Modal,
-    Input,
-    message,
-    Alert,
-    Spin,
-} from "antd";
+import { Modal, message, Alert, Button } from "antd";
 import {
     CheckCircleOutlined,
     PlayCircleOutlined,
     PauseCircleOutlined,
     CloseCircleOutlined,
-    MoreOutlined,
     HistoryOutlined,
     CommentOutlined,
 } from "@ant-design/icons";
@@ -27,7 +13,11 @@ import TaskLayout from "@/Layouts/TaskLayout";
 import TaskNavbar from "@/Components/TaskNavBar";
 import useTask from "@/Hooks/useTask";
 import axios from "axios";
-
+import TaskCardView from "./TaskCardView";
+import TaskTable from "./TaskTable";
+import TaskHistoryModal from "./TaskHistoryModal";
+import TaskNoteModal from "./TaskNoteModal";
+import NewTaskModal from "./NewTaskModal";
 const TaskIndex = () => {
     const { emp_data, tasks, error } = usePage().props;
 
@@ -44,7 +34,11 @@ const TaskIndex = () => {
         taskId: null,
     });
     const [noteText, setNoteText] = useState("");
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
+    const handleCreateTask = async (data) => {
+        console.log("Creating new task with data:", data);
+    };
     // Debug log to check what we're receiving
     console.log("Tasks from props:", tasks);
     console.log("Current user:", currentUser);
@@ -155,16 +149,6 @@ const TaskIndex = () => {
         return colors[status] || "default";
     };
 
-    // Get source badge color
-    const getSourceColor = (sourceType) => {
-        const colors = {
-            1: "purple", // Ticket
-            2: "cyan", // Project
-            3: "default", // Manual
-        };
-        return colors[sourceType] || "default";
-    };
-
     // Action menu items
     const getActionItems = (task) => {
         const items = [];
@@ -234,164 +218,21 @@ const TaskIndex = () => {
         return items;
     };
 
-    // Table columns
-    const columns = [
-        {
-            title: "Task ID",
-            dataIndex: "id",
-            key: "id",
-            width: 120,
-            render: (id, record) => (
-                <div>
-                    <div className="font-semibold">{id}</div>
-                    {/* <Tag
-                        color={getSourceColor(record.source_type)}
-                        className="mt-1"
-                    >
-                        {record.source_label}
-                    </Tag> */}
-                </div>
-            ),
-        },
-        {
-            title: "Title",
-            dataIndex: "title",
-            key: "title",
-            width: 130,
-            render: (title, record) => (
-                <div>
-                    <div className="font-medium">{title}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                        {record.description?.substring(0, 60)}
-                        {record.description?.length > 60 ? "..." : ""}
-                    </div>
-                </div>
-            ),
-        },
-        {
-            title: "Status",
-            dataIndex: "status",
-            key: "status",
-            width: 130,
-            render: (status, record) => (
-                <Tag color={getStatusColor(status)}>{record.status_label}</Tag>
-            ),
-        },
-        {
-            title: "Priority",
-            dataIndex: "priority",
-            key: "priority",
-            width: 100,
-            render: (priority) => {
-                const colors = {
-                    1: "red",
-                    2: "orange",
-                    3: "blue",
-                    4: "gray",
-                    5: "default",
-                };
-                const labels = {
-                    1: "Urgent",
-                    2: "High",
-                    3: "Medium",
-                    4: "Low",
-                    5: "N/A",
-                };
-                return <Tag color={colors[priority]}>{labels[priority]}</Tag>;
-            },
-        },
-        {
-            title: "Date",
-            dataIndex: "date",
-            key: "date",
-            width: 110,
-        },
-        {
-            title: "Actions",
-            key: "actions",
-            width: 100,
-            fixed: "right",
-            render: (_, record) => (
-                <div className="flex gap-2">
-                    {record.status !== 3 && (
-                        <Button
-                            type="primary"
-                            size="small"
-                            icon={<CheckCircleOutlined />}
-                            onClick={() => handleQuickComplete(record.id)}
-                            loading={loading}
-                        >
-                            Done
-                        </Button>
-                    )}
-                    <Dropdown
-                        menu={{ items: getActionItems(record) }}
-                        trigger={["click"]}
-                    >
-                        <Button size="small" icon={<MoreOutlined />} />
-                    </Dropdown>
-                </div>
-            ),
-        },
-    ];
+    const colors = {
+        1: "red",
+        2: "orange",
+        3: "blue",
+        4: "gray",
+        5: "default",
+    };
 
-    // Card view
-    const renderCardView = () => (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredTasks.map((task) => (
-                <Card
-                    key={task.id}
-                    className="shadow-sm border border-base-300 hover:shadow-md transition-shadow"
-                    actions={[
-                        task.status !== 3 && (
-                            <Button
-                                type="link"
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => handleQuickComplete(task.id)}
-                                loading={loading}
-                            >
-                                Complete
-                            </Button>
-                        ),
-                        <Dropdown
-                            menu={{ items: getActionItems(task) }}
-                            trigger={["click"]}
-                        >
-                            <Button type="link" icon={<MoreOutlined />}>
-                                More
-                            </Button>
-                        </Dropdown>,
-                    ].filter(Boolean)}
-                >
-                    <div className="mb-3">
-                        <div className="flex justify-between items-start mb-2">
-                            <span className="font-semibold text-lg">
-                                {task.id}
-                            </span>
-                            <Tag color={getStatusColor(task.status)}>
-                                {task.status_label}
-                            </Tag>
-                        </div>
-                        <Tag color={getSourceColor(task.source_type)}>
-                            {task.source_label}
-                        </Tag>
-                    </div>
-
-                    <h3 className="font-bold mb-2">{task.title}</h3>
-                    <p className="text-sm text-gray-600 mb-3">
-                        {task.description}
-                    </p>
-
-                    <div className="flex justify-between items-center text-xs text-gray-500">
-                        <span>📅 {task.date}</span>
-                        <Tag color={task.priority <= 2 ? "red" : "blue"}>
-                            Priority: {task.priority}
-                        </Tag>
-                    </div>
-                </Card>
-            ))}
-        </div>
-    );
+    const labels = {
+        1: "Urgent",
+        2: "High",
+        3: "Medium",
+        4: "Low",
+        5: "N/A",
+    };
 
     return (
         <TaskLayout
@@ -406,96 +247,66 @@ const TaskIndex = () => {
                 searchTerm={searchTerm}
                 onSearch={setSearchTerm}
             />
-
-            {error && (
-                <Alert
-                    message="Error"
-                    description={error}
-                    type="error"
-                    showIcon
-                    closable
-                    className="mb-4"
-                />
-            )}
-
-            <div className="bg-base-100 rounded-xl shadow-md p-4">
-                {!tasks || tasks.length === 0 ? (
-                    <Empty
-                        description="No tasks available. Tasks will appear here once created."
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    />
-                ) : filteredTasks.length === 0 ? (
-                    <Empty description="No tasks found matching your filters." />
-                ) : isCardView ? (
-                    renderCardView()
-                ) : (
-                    <Table
-                        dataSource={filteredTasks}
-                        columns={columns}
-                        rowKey="id"
-                        bordered
-                        pagination={{ pageSize: 10 }}
-                        size="middle"
-                        scroll={{ x: 1000 }}
-                        loading={loading}
+            <>
+                <div className="flex justify-end mb-4">
+                    <Button type="primary" onClick={() => setIsModalOpen(true)}>
+                        + New Task
+                    </Button>
+                </div>
+                <NewTaskModal
+                    open={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    onCreate={handleCreateTask}
+                />{" "}
+                {error && (
+                    <Alert
+                        message="Error"
+                        description={error}
+                        type="error"
+                        showIcon
+                        closable
+                        className="mb-4"
                     />
                 )}
-            </div>
-
-            {/* History Modal */}
-            <Modal
-                title="Task History"
-                open={historyModal.visible}
-                onCancel={() =>
-                    setHistoryModal({ visible: false, taskId: null, logs: [] })
-                }
-                footer={null}
-                width={600}
-            >
-                <div className="space-y-3">
-                    {historyModal.logs.map((log, index) => (
-                        <div
-                            key={index}
-                            className="border-l-4 border-blue-500 pl-4 py-2"
-                        >
-                            <div className="font-semibold">
-                                {log.action_type}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                                {log.description}
-                            </div>
-                            {log.old_status && log.new_status && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                    {log.old_status} → {log.new_status}
-                                </div>
-                            )}
-                            <div className="text-xs text-gray-400 mt-1">
-                                by {log.created_by} • {log.created_at}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </Modal>
-
-            {/* Note Modal */}
-            <Modal
-                title="Add Note"
-                open={noteModal.visible}
-                onCancel={() => {
-                    setNoteModal({ visible: false, taskId: null });
-                    setNoteText("");
-                }}
-                onOk={handleAddNote}
-                okText="Add Note"
-            >
-                <Input.TextArea
-                    rows={4}
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
-                    placeholder="Enter your note here..."
-                    maxLength={1000}
+                {isCardView ? (
+                    <TaskCardView
+                        tasks={filteredTasks}
+                        loading={loading}
+                        getStatusColor={getStatusColor}
+                        getActionItems={getActionItems}
+                        handleQuickComplete={handleQuickComplete}
+                    />
+                ) : (
+                    <TaskTable
+                        tasks={filteredTasks}
+                        loading={loading}
+                        getStatusColor={getStatusColor}
+                        getActionItems={getActionItems}
+                        handleQuickComplete={handleQuickComplete}
+                    />
+                )}
+                <TaskHistoryModal
+                    visible={historyModal.visible}
+                    logs={historyModal.logs}
+                    onClose={() =>
+                        setHistoryModal({
+                            visible: false,
+                            taskId: null,
+                            logs: [],
+                        })
+                    }
                 />
-            </Modal>
+                <TaskNoteModal
+                    visible={noteModal.visible}
+                    noteText={noteText}
+                    onCancel={() => {
+                        setNoteModal({ visible: false, taskId: null });
+                        setNoteText("");
+                    }}
+                    onChange={setNoteText}
+                    onOk={handleAddNote}
+                />
+            </>
         </TaskLayout>
     );
 };

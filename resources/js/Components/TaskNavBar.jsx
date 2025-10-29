@@ -13,7 +13,6 @@ export default function TaskNavbar({
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-base-100 px-4 py-3 rounded-xl shadow-sm border border-base-300">
             {/* 🔍 Search */}
             <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-gray-500" />
                 <Input.Search
                     placeholder="Search tasks..."
                     allowClear

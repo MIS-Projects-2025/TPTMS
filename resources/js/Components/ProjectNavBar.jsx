@@ -17,7 +17,6 @@ export default function ProjectNavbar({
             <div className="flex flex-wrap items-center gap-3">
                 {/* Search Box */}
                 <div className="flex items-center gap-2">
-                    <Search className="w-4 h-4 text-gray-500" />
                     <Input.Search
                         placeholder="Search projects..."
                         allowClear
