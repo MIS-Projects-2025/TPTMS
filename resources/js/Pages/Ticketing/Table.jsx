@@ -106,16 +106,8 @@ export default function TicketTable() {
     }, [unreadCount, notifications]);
 
     // Determine active filter from status
-    const getActiveFilter = () => {
-        if (filters?.status === "NEW,TRIAGED") return "active";
-        if (filters?.status === "IN_PROGRESS") return "in progress";
-        if (filters?.status === "CLOSED") return "closed";
-        if (filters?.status === "URGENT") return "urgent";
-        return "all";
-    };
-
-    const activeFilter = getActiveFilter();
-
+    const activeFilter = filters?.status || "all";
+    console.log(activeFilter);
     // Update search value when filters change from URL
     useEffect(() => {
         setSearchValue(filters?.search || "");
@@ -200,45 +192,29 @@ export default function TicketTable() {
 
     // Handle status filter via stat cards
     const handleStatusFilter = (filterType) => {
+        console.log("🔄 Changing filter to:", filterType);
         setLoading(true);
-
-        let statusValue = "";
-        switch (filterType) {
-            case "active":
-                statusValue = "NEW,TRIAGED";
-                break;
-            case "in progress":
-                statusValue = "IN_PROGRESS";
-                break;
-            case "closed":
-                statusValue = "CLOSED";
-                break;
-            case "urgent":
-                statusValue = "URGENT";
-                break;
-            default:
-                statusValue = "";
-        }
 
         const params = {
             page: 1,
             pageSize: pagination?.per_page || 10,
             search: filters?.search || "",
             project: filters?.project || "",
-            status: statusValue,
+            status: filterType, // Sends: 'all', 'active', 'urgent', 'in_progress', 'closed'
             sortField: filters?.sortField || "created_at",
             sortOrder: filters?.sortOrder || "desc",
         };
 
-        const encodedParams = btoa(JSON.stringify(params));
+        console.log("📤 Sending params:", params);
 
-        router.get(
-            route("tickets.datatable"),
-            { q: encodedParams },
-            {
-                onFinish: () => setLoading(false),
-            }
-        );
+        router.get(route("tickets.datatable"), params, {
+            preserveState: true,
+            preserveScroll: true,
+            onFinish: () => {
+                console.log("✅ Filter applied");
+                setLoading(false);
+            },
+        });
     };
 
     // Handle action navigation
@@ -490,12 +466,12 @@ export default function TicketTable() {
                 />
                 <StatCard
                     title="In Progress"
-                    value={statusCounts?.["in progress"] || 0}
+                    value={statusCounts?.in_progress || 0}
                     color="warning"
                     icon={ToolOutlined}
-                    onClick={() => handleStatusFilter("in progress")}
-                    isActive={activeFilter === "in progress"}
-                    filterType="in progress"
+                    onClick={() => handleStatusFilter("in_progress")}
+                    isActive={activeFilter === "in_progress"}
+                    filterType="in_progress"
                 />
                 <StatCard
                     title="Closed"

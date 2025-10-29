@@ -7,22 +7,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use App\Http\Middleware\AuthMiddleware; // Re-importing custom middleware
 
-function getCurrentUser()
-{
-    $empData = session('emp_data');
-    if (!$empData) {
-        return null;
-    }
 
-    // This logic ensures the local NotificationUser model is synced with the session data
-    return NotificationUser::firstOrCreate(
-        ['emp_id' => $empData['emp_id']],
-        [
-            'emp_name' => $empData['emp_name'] ?? 'Unknown',
-            'emp_dept' => $empData['emp_dept'] ?? 'Unknown',
-        ]
-    );
-}
 
 Route::post('/TPTMS/broadcasting/auth', function (Request $request) {
     try {

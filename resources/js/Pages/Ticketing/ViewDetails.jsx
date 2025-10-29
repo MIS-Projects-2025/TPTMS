@@ -25,6 +25,8 @@ const ViewDetails = () => {
         userRoles = [],
     } = usePage().props;
     console.log(usePage().props);
+    console.log(ticket);
+
     if (!ticket) return <div>No ticket data found</div>;
     const isResubmitAllowed =
         ticket.STATUS === "Returned" && ticket.EMPLOYID === empData.emp_id;

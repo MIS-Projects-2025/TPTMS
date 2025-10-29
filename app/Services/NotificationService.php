@@ -241,6 +241,7 @@ class NotificationService
         );
     }
 
+
     public function notifyTicketResubmitted($ticketId, $requestType, $resubmittedBy, $projectName, $returnedById)
     {
         Log::info("=== NOTIFYING TICKET RESUBMISSION: {$ticketId} ===");

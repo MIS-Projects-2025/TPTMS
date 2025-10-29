@@ -13,6 +13,7 @@ import {
 import AttachmentUpload from "./AttachmentUpload";
 
 const ActionButton = ({ action, ticketId, ticketStatus }) => {
+    const normalizedAction = action.toUpperCase();
     const [showModal, setShowModal] = useState(false);
     const [remarks, setRemarks] = useState("");
     const [selectedProgrammers, setSelectedProgrammers] = useState([]);
@@ -22,6 +23,7 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
     const [editableAttachments, setEditableAttachments] = useState([]); // ADD THIS LINE
 
     const { programmerOptions = [] } = usePage().props;
+    // console.log(usePage().props);
 
     const handleAction = (type) => {
         setActionType(type);
@@ -148,8 +150,9 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
             return messages[actionType] || "Action completed";
         }
     };
+    console.log(normalizedAction);
 
-    const getButtonConfig = () => {
+    const getButtonConfig = (normalizedAction) => {
         const configs = {
             ASSESS: {
                 label: "Review Ticket",
@@ -186,11 +189,10 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                 showBoth: true,
             },
             CLOSE: {
-                label: "Closure Action",
+                label: "Close Ticket",
                 icon: <XCircle className="w-4 h-4" />,
                 approveText: "Close",
-                disapproveText: "Reopen",
-                showBoth: true,
+                showBoth: false, // Changed: Only close, no reopen for testers
             },
             ON_HOLD: {
                 label: "Put On Hold",
@@ -199,10 +201,10 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                 showBoth: false,
             },
             TEST: {
-                label: "Test Action",
+                label: "Submit Test Result",
                 icon: <RefreshCw className="w-4 h-4" />,
-                approveText: "Close",
-                disapproveText: "Return",
+                approveText: "Pass & Close",
+                disapproveText: "Fail & Return",
                 showBoth: true,
             },
             RESUBMIT: {
@@ -213,10 +215,10 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
             },
         };
 
-        return configs[action] || null;
+        return configs[normalizedAction] || null;
     };
 
-    const config = getButtonConfig();
+    const config = getButtonConfig(normalizedAction);
     if (!config) return null;
 
     const handleResetModal = () => {
@@ -279,11 +281,31 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
+
             case "RESUBMIT":
                 return (
                     <div className="space-y-4">
+                        <div className="alert alert-warning">
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                className="stroke-current shrink-0 w-6 h-6"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                                ></path>
+                            </svg>
+                            <span className="text-sm">
+                                Please update or add new attachments before
+                                resubmitting
+                            </span>
+                        </div>
                         <p className="text-sm font-semibold mb-3">
-                            Edit Attachments
+                            Edit Attachments *
                         </p>
                         <AttachmentUpload
                             viewOnly={false}
@@ -317,6 +339,7 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
+
             case "CLOSE":
                 return (
                     <div className="space-y-4">
@@ -355,6 +378,7 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
+
             case "RESOLVE":
                 return (
                     <div className="space-y-4">
@@ -374,6 +398,7 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
+
             case "ASSESS":
                 return (
                     <div className="space-y-4">
@@ -412,6 +437,7 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
+
             case "DH_APPROVE":
             case "OD_APPROVE":
                 return (
@@ -454,25 +480,46 @@ const ActionButton = ({ action, ticketId, ticketStatus }) => {
                         </div>
                     </div>
                 );
+
             case "TEST":
                 return (
                     <div className="space-y-4">
+                        <div className="alert alert-info">
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                className="stroke-current shrink-0 w-6 h-6"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                ></path>
+                            </svg>
+                            <span className="text-sm">
+                                Choose "Pass & Close" if testing is successful,
+                                or "Fail & Return" if issues were found.
+                            </span>
+                        </div>
                         <div>
                             <label className="label">
                                 <span className="label-text font-semibold">
-                                    Remarks (Optional)
+                                    Test Results & Remarks *
                                 </span>
                             </label>
                             <textarea
                                 className="textarea textarea-bordered w-full"
-                                placeholder="Add any remarks about your test result..."
+                                placeholder="Describe your test results, any issues found, or confirmation of success..."
                                 value={remarks}
                                 onChange={(e) => setRemarks(e.target.value)}
-                                rows={4}
+                                rows={5}
                             />
                         </div>
                     </div>
                 );
+
             default:
                 return null;
         }
