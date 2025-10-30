@@ -6,6 +6,7 @@ use App\Repositories\TicketRepository;
 use App\Constants\TicketConstants;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\TaskController;
 use App\Services\NotificationService;
 use App\ValueObjects\WorkflowPath;
 
@@ -100,7 +101,7 @@ class TicketService
         );
 
         if (!empty($validated['testers'])) {
-            $this->ticketRepo->insertTesters($ticketId, $validated['testers']);
+            $this->ticketRepo->insertTesters($ticketDbId, $validated['testers']);
         }
 
         if (!empty($attachments)) {
@@ -111,22 +112,44 @@ class TicketService
 
         $projId = null;
         if ($validated['request_type'] == TicketConstants::REQUEST_NEW_SYSTEM) {
-            $projId = $this->ticketRepo->createProjectFromTicket(
-                $ticketId,
-                $projectName,
+            $projectController = new ProjectController();
+            $projId = $projectController->createFromTicket(
+                $projectName ?? ('Project for ' . $ticketId),
                 $validated['details'],
-                $empData,
-                $validated['request_type']
+                $empData['emp_dept'],
+                $empData['emp_id'],
+                $empData['emp_id'],
+                $validated['request_type'],
+                $ticketId
             );
             if (!$projId) {
                 throw new \Exception('Project creation failed');
             }
         }
-        if ($validated['request_type'] == TicketConstants::REQUEST_PARALLEL_RUN || $validated['request_type'] == TicketConstants::REQUEST_TESTING) {
-            $testerId = $this->ticketRepo->getTesters($ticketId);
+
+        $testerIds = null;
+        if (in_array($validated['request_type'], [TicketConstants::REQUEST_TESTING, TicketConstants::REQUEST_PARALLEL_RUN])) {
+            $testerIds = $validated['testers'] ?? [];
         }
 
-        return [$ticketId, $projId, $projectName, $testerId];
+        // NOTIFICATION: Ticket Created
+        try {
+            $this->notificationService->notifyTicketCreated(
+                $ticketId,
+                $validated['request_type'],
+                $empData['emp_name'],
+                $validated['details'],
+                $projectName,
+                $testerIds
+            );
+        } catch (\Exception $e) {
+            Log::warning('Ticket creation notification failed', [
+                'ticket_id' => $ticketId,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return [$ticketId, $projId, $projectName, $testerIds];
     }
 
     public function getTicketsDataTable(array $filters, array $empData, array $userRoles)
@@ -142,7 +165,6 @@ class TicketService
 
         $query = $this->ticketRepo->queryTickets();
 
-        // Role-based visibility
         $testerTicketIds = $this->ticketRepo->getTesterTicketIds($userId);
         $approverIds = in_array('DEPARTMENT_HEAD', $userRoles)
             ? $this->ticketRepo->getApproverIds($userId)
@@ -150,14 +172,11 @@ class TicketService
 
         $query = $this->applyRoleVisibility($query, $userRoles, $userId, $testerTicketIds, $approverIds);
 
-        // Apply project filter
         if ($project) $query->where('PROJECT_NAME', $project);
 
-        // Calculate status counts BEFORE applying status filter
         $baseQuery = clone $query;
         $statusCounts = $this->ticketRepo->getStatusCounts($baseQuery);
 
-        // Apply filters
         $query = $this->applyStatusFilter($query, $status);
         if ($search) {
             $query->where(fn($q) => $q->where('TICKET_ID', 'like', "%{$search}%")
@@ -197,211 +216,376 @@ class TicketService
 
     public function assessTicket(string $ticketId, array $empData, ?string $remarks): array
     {
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_ASSESSED,
-            [
-                'new_status' => TicketConstants::STATUS_TRIAGED,
-                'remark_text' => $remarks ?? 'Ticket assessed and ready for approval',
-                'remark_type' => 'ASSESSMENT',
-            ],
-            fn($ticket) => $this->validateAssessment($ticket),
-            fn($ticket, $empData) => $this->sendAssessmentNotifications($ticket, $empData)
-        );
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
+
+        if (!$this->validateAssessment($ticket)) {
+            return ['success' => false, 'message' => 'Cannot assess this ticket'];
+        }
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_ASSESSED,
+            'action_by' => $empData['emp_id'],
+            'old_status' => $ticket->STATUS,
+            'new_status' => TicketConstants::STATUS_TRIAGED,
+            'remark_text' => $remarks ?? 'Ticket assessed and ready for approval',
+            'remark_type' => 'ASSESSMENT',
+        ]);
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to assess ticket'];
+        }
+
+        try {
+            $this->notificationService->notifyAssessmentComplete(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $ticket->EMPLOYID,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME ?? ''
+            );
+        } catch (\Exception $e) {
+            Log::warning('Assessment notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket assessed successfully'];
     }
 
     public function approveDH(string $ticketId, array $empData, ?string $remarks): array
     {
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_DH_APPROVED,
-            function ($ticket) use ($remarks) {
-                $newStatus = ($ticket->TYPE_OF_REQUEST === TicketConstants::REQUEST_ADJUSTMENT)
-                    ? TicketConstants::STATUS_APPROVED
-                    : TicketConstants::STATUS_TRIAGED;
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
 
-                return [
-                    'old_status' => $ticket->STATUS,
-                    'new_status' => $newStatus,
-                    'remark_text' => $remarks ?? 'Approved by Department Head',
-                    'remark_type' => 'APPROVAL',
-                    'project_name' => $ticket->PROJECT_NAME,
-                    'request_type' => $ticket->TYPE_OF_REQUEST,
-                    'ticket_number' => $ticket->TICKET_ID,
-                ];
-            },
-            fn($ticket) => $this->validateDHApproval($ticket),
-            fn($ticket, $empData) => $this->sendDHApprovalNotifications($ticket, $empData)
-        );
+        if (!$this->validateDHApproval($ticket)) {
+            return ['success' => false, 'message' => 'Cannot approve this ticket'];
+        }
+
+        $newStatus = ($ticket->TYPE_OF_REQUEST === TicketConstants::REQUEST_ADJUSTMENT)
+            ? TicketConstants::STATUS_APPROVED
+            : TicketConstants::STATUS_TRIAGED;
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_DH_APPROVED,
+            'action_by' => $empData['emp_id'],
+            'old_status' => $ticket->STATUS,
+            'new_status' => $newStatus,
+            'remark_text' => $remarks ?? 'Approved by Department Head',
+            'remark_type' => 'APPROVAL',
+        ], function ($data) use ($ticket, $empData) {
+            $projectController = new ProjectController();
+            $projectController->updateToReady(
+                $ticket->PROJECT_NAME,
+                'DH_APPROVED',
+                $empData['emp_id'],
+                $ticket->TYPE_OF_REQUEST,
+                $ticket->TICKET_ID
+            );
+        });
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to approve ticket'];
+        }
+
+        try {
+            $this->notificationService->notifyDHApproved(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME
+            );
+        } catch (\Exception $e) {
+            Log::warning('DH approval notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket approved by Department Head'];
     }
 
     public function approveOD(string $ticketId, array $empData, ?string $remarks): array
     {
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_OD_APPROVED,
-            fn($ticket) => [
-                'old_status' => $ticket->STATUS,
-                'new_status' => TicketConstants::STATUS_APPROVED,
-                'approval_type' => 'OD_APPROVED',
-                'remark_text' => $remarks ?? 'Approved by Operations Director',
-                'remark_type' => 'APPROVAL',
-                'update_project' => true,
-                'project_name' => $ticket->PROJECT_NAME,
-                'request_type' => $ticket->TYPE_OF_REQUEST,
-                'ticket_number' => $ticket->TICKET_ID,
-            ],
-            fn($ticket) => $this->validateODApproval($ticket),
-            fn($ticket, $empData) => $this->sendODApprovalNotifications($ticket, $empData)
-        );
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
+
+        if (!$this->validateODApproval($ticket)) {
+            return ['success' => false, 'message' => 'Cannot approve this ticket'];
+        }
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_OD_APPROVED,
+            'action_by' => $empData['emp_id'],
+            'old_status' => $ticket->STATUS,
+            'new_status' => TicketConstants::STATUS_APPROVED,
+            'remark_text' => $remarks ?? 'Approved by Operations Director',
+            'remark_type' => 'APPROVAL',
+        ], function ($data) use ($ticket, $empData) {
+            $projectController = new ProjectController();
+            $projectController->updateToReady(
+                $ticket->PROJECT_NAME,
+                'OD_APPROVED',
+                $empData['emp_id'],
+                $ticket->TYPE_OF_REQUEST,
+                $ticket->TICKET_ID
+            );
+        });
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to approve ticket'];
+        }
+
+        try {
+            $this->notificationService->notifyODApproved(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME
+            );
+        } catch (\Exception $e) {
+            Log::warning('OD approval notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket approved by Operations Director'];
     }
 
     public function assignTicket(string $ticketId, array $assignedTo, array $empData, ?string $remarks): array
     {
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_ASSIGNED,
-            fn($ticket) => [
-                'ticket_number' => $ticket->TICKET_ID,
-                'project_name' => $ticket->PROJECT_NAME,
-                'request_type' => $ticket->TYPE_OF_REQUEST,
-                'assigned_to' => implode(',', $assignedTo),
-                'assigned_to_array' => $assignedTo,
-                'old_status' => $ticket->STATUS,
-                'new_status' => TicketConstants::STATUS_IN_PROGRESS,
-                'remark_text' => $remarks ?? 'Ticket assigned and work in progress',
-            ],
-            fn($ticket) => $this->validateAssignment($ticket, $assignedTo),
-            function ($ticket, $empData) {
-                $this->syncProjectStatus($ticket->PROJECT_NAME);
-                $this->sendAssignmentNotifications($ticket, $ticket->ASSIGNED_TO, $empData);
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
+
+        if (!$this->validateAssignment($ticket, $assignedTo)) {
+            return ['success' => false, 'message' => 'Cannot assign this ticket'];
+        }
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_ASSIGNED,
+            'action_by' => $empData['emp_id'],
+            'assigned_to' => implode(',', $assignedTo),
+            'old_status' => $ticket->STATUS,
+            'new_status' => TicketConstants::STATUS_IN_PROGRESS,
+            'remark_text' => $remarks ?? 'Ticket assigned and work in progress',
+        ], function ($data) use ($ticket, $empData, $assignedTo, $remarks) {
+            $taskController = app(TaskController::class);
+
+            foreach ($assignedTo as $empId) {
+                $taskController->createFromTicket(
+                    $ticket->TICKET_ID,
+                    "TICKET",
+                    $remarks,
+                    $empId,
+                    $empData['emp_id']
+                );
             }
-        );
+
+            $projectController = new ProjectController();
+            $projectController->updateToInProgress(
+                $ticket->PROJECT_NAME,
+                implode(',', $assignedTo),
+                $empData['emp_id'],
+                $ticket->TYPE_OF_REQUEST,
+                $ticket->TICKET_ID
+            );
+        });
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to assign ticket'];
+        }
+
+        try {
+            $this->notificationService->notifyTicketAssigned(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $assignedTo,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME
+            );
+        } catch (\Exception $e) {
+            Log::warning('Assignment notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket assigned successfully'];
     }
 
     public function resolveTicket(string $ticketId, array $empData, string $remarks, array $attachments = []): array
     {
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_RESOLVED,
-            fn($ticket) => [
-                'ticket_number' => $ticket->TICKET_ID,
-                'resolved_by' => $empData['emp_id'],
-                'remarks' => $remarks,
-                'attachments' => $attachments,
-                'old_status' => TicketConstants::STATUS_IN_PROGRESS,
-                'new_status' => TicketConstants::STATUS_RESOLVED,
-                'request_type' => $ticket->TYPE_OF_REQUEST,
-                'project_name' => $ticket->PROJECT_NAME,
-            ],
-            fn($ticket) => $this->validateResolution($ticket, $empData),
-            function ($ticket, $empData) {
-                $this->syncProjectStatus($ticket->PROJECT_NAME);
-                $this->notificationService->notifyTicketResolved(
-                    $ticket->TICKET_ID,
-                    $ticket->TYPE_OF_REQUEST,
-                    $ticket->EMPLOYID,
-                    $empData['emp_name'],
-                    $ticket->PROJECT_NAME
-                );
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
+
+        if (!$this->validateResolution($ticket, $empData)) {
+            return ['success' => false, 'message' => 'Cannot resolve this ticket'];
+        }
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_RESOLVED,
+            'action_by' => $empData['emp_id'],
+            'old_status' => $ticket->STATUS,
+            'new_status' => TicketConstants::STATUS_RESOLVED,
+            'remark_text' => $remarks,
+            'remark_type' => 'RESOLUTION',
+        ], function ($data) use ($attachments, $ticketId, $empData) {
+            if (!empty($attachments)) {
+                $this->ticketRepo->handleAttachments($attachments, $ticketId, $empData['emp_id']);
             }
-        );
+        });
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to resolve ticket'];
+        }
+
+        $this->syncProjectStatus($ticket->PROJECT_NAME);
+
+        try {
+            $this->notificationService->notifyTicketResolved(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $ticket->EMPLOYID,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME
+            );
+        } catch (\Exception $e) {
+            Log::warning('Resolution notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket resolved successfully'];
     }
 
     public function closeTicket(string $ticketId, array $empData, ?string $remarks = null, ?int $rating = null): array
     {
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_CLOSED,
-            fn($ticket) => [
-                'ticket_number' => $ticket->TICKET_ID,
-                'project_name' => $ticket->PROJECT_NAME,
-                'closed_by' => $empData['emp_id'],
-                'remarks' => $remarks ?? 'Ticket closed',
-                'rating' => $rating,
-                'old_status' => $ticket->STATUS,
-                'new_status' => TicketConstants::STATUS_CLOSED,
-                'request_type' => $ticket->TYPE_OF_REQUEST,
-            ],
-            fn($ticket) => $this->validateClosure($ticket, $empData),
-            function ($ticket, $empData) use ($rating) {
-                $this->handleProjectDeployment($ticket, $empData['emp_id']);
-                $this->notificationService->notifyTicketClosed(
-                    $ticket->TICKET_ID,
-                    $ticket->TYPE_OF_REQUEST,
-                    $empData['emp_name'],
-                    $ticket->PROJECT_NAME,
-                    $rating
-                );
-            }
-        );
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
+
+        if (!$this->validateClosure($ticket, $empData)) {
+            return ['success' => false, 'message' => 'Cannot close this ticket'];
+        }
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_CLOSED,
+            'action_by' => $empData['emp_id'],
+            'old_status' => $ticket->STATUS,
+            'new_status' => TicketConstants::STATUS_CLOSED,
+            'remark_text' => $remarks ?? 'Ticket closed',
+            'metadata' => ['rating' => $rating],
+        ]);
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to close ticket'];
+        }
+
+        $this->handleProjectDeployment($ticket, $empData['emp_id']);
+
+        try {
+            $this->notificationService->notifyTicketClosed(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME,
+                $rating
+            );
+        } catch (\Exception $e) {
+            Log::warning('Closure notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket closed successfully'];
     }
 
     public function returnTicket(string $ticketId, array $empData, string $remarks): array
     {
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_RETURNED,
-            fn($ticket) => [
-                'ticket_number' => $ticket->TICKET_ID,
-                'returned_by' => $empData['emp_id'],
-                'remarks' => $remarks,
-                'old_status' => $ticket->STATUS,
-                'new_status' => TicketConstants::STATUS_RETURNED,
-                'project_name' => $ticket->PROJECT_NAME,
-                'requestor_id' => $ticket->EMPLOYID,
-            ],
-            fn($ticket) => $this->validateReturn($ticket),
-            function ($ticket, $empData) use ($remarks) {
-                $this->syncProjectStatus($ticket->PROJECT_NAME);
-                $this->notificationService->notifyTicketReturned(
-                    $ticket->TICKET_ID,
-                    $ticket->EMPLOYID,
-                    $empData['emp_name'],
-                    $ticket->PROJECT_NAME,
-                    $remarks
-                );
-            }
-        );
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
+
+        if (!$this->validateReturn($ticket)) {
+            return ['success' => false, 'message' => 'Cannot return this ticket'];
+        }
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_RETURNED,
+            'action_by' => $empData['emp_id'],
+            'old_status' => $ticket->STATUS,
+            'new_status' => TicketConstants::STATUS_RETURNED,
+            'remark_text' => $remarks,
+        ]);
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to return ticket'];
+        }
+
+        $this->syncProjectStatus($ticket->PROJECT_NAME);
+
+        try {
+            $this->notificationService->notifyTicketReturned(
+                $ticket->TICKET_ID,
+                $ticket->EMPLOYID,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME,
+                $remarks
+            );
+        } catch (\Exception $e) {
+            Log::warning('Return notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket returned successfully'];
     }
 
     public function resubmitTicket(string $ticketId, array $empData): array
     {
-        $returnedBy = $this->ticketRepo->getReturnedBy($ticketId);
+        $ticket = $this->ticketRepo->getTicketById($ticketId);
+        if (!$ticket) {
+            return ['success' => false, 'message' => 'Ticket not found'];
+        }
 
-        return $this->executeTicketAction(
-            $ticketId,
-            $empData,
-            TicketConstants::WORKFLOW_RESUBMITTED,
-            fn($ticket) => [
-                'ticket_number' => $ticket->TICKET_ID,
-                'resubmitted_by' => $empData['emp_id'],
-                'old_status' => $ticket->STATUS,
-                'new_status' => TicketConstants::STATUS_TRIAGED,
-                'project_name' => $ticket->PROJECT_NAME,
-                'returned_by' => $returnedBy, // use the employee who returned it
-            ],
-            fn($ticket) => $this->validateResubmission($ticket, $empData),
-            function ($ticket, $empData) use ($returnedBy) {
-                $this->syncProjectStatus($ticket->PROJECT_NAME);
-                $this->notificationService->notifyTicketResubmitted(
-                    $ticket->TICKET_ID,
-                    $ticket->TYPE_OF_REQUEST,
-                    $empData['emp_name'],
-                    $ticket->PROJECT_NAME,
-                    $returnedBy // make sure notification shows correct returned_by
-                );
-            }
-        );
+        if (!$this->validateResubmission($ticket, $empData)) {
+            return ['success' => false, 'message' => 'Cannot resubmit this ticket'];
+        }
+
+        $returnedBy = $this->ticketRepo->getReturnedBy($ticket->ID);
+
+        $success = $this->ticketRepo->performWorkflowAction([
+            'ticket_id' => $ticket->ID,
+            'action_type' => TicketConstants::WORKFLOW_RESUBMITTED,
+            'action_by' => $empData['emp_id'],
+            'old_status' => $ticket->STATUS,
+            'new_status' => TicketConstants::STATUS_TRIAGED,
+            'remark_text' => 'Requestor resubmitted ticket after clarification.',
+        ]);
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to resubmit ticket'];
+        }
+
+        $this->syncProjectStatus($ticket->PROJECT_NAME);
+
+        try {
+            $this->notificationService->notifyTicketResubmitted(
+                $ticket->TICKET_ID,
+                $ticket->TYPE_OF_REQUEST,
+                $empData['emp_name'],
+                $ticket->PROJECT_NAME,
+                $returnedBy
+            );
+        } catch (\Exception $e) {
+            Log::warning('Resubmission notification failed', ['ticket_id' => $ticketId, 'error' => $e->getMessage()]);
+        }
+
+        return ['success' => true, 'message' => 'Ticket resubmitted successfully'];
     }
-
 
     public function submitTestResult(string $ticketId, array $empData, array $validated, array $attachments = []): array
     {
@@ -414,76 +598,47 @@ class TicketService
             return ['success' => false, 'message' => 'Invalid test submission', 'status' => 403];
         }
 
-        $data = [
+        $success = $this->ticketRepo->performWorkflowAction([
             'ticket_id' => $ticket->ID,
-            'ticket_number' => $ticket->TICKET_ID,
-            'tester_id' => $empData['emp_id'],
-            'test_status' => $validated['test_status'],
-            'remarks' => $validated['remarks'],
-            'attachments' => $attachments,
-            'old_status' => $ticket->STATUS,
-        ];
-
-        $result = $this->ticketRepo->performSubmitTestResult($data);
-
-        if ($result['success']) {
-            $this->syncProjectStatus($ticket->PROJECT_NAME);
-        }
-
-        return $result;
-    }
-
-    // ========================
-    // GENERIC ACTION EXECUTOR
-    // ========================
-
-    private function executeTicketAction(
-        string $ticketId,
-        array $empData,
-        string $actionType,
-        $actionData,
-        ?callable $validator = null,
-        ?callable $postCommit = null
-    ): array {
-        // 1. Get ticket
-        $ticket = $this->ticketRepo->getTicketById($ticketId);
-        if (!$ticket) {
-            return ['success' => false, 'message' => 'Ticket not found'];
-        }
-
-        // 2. Validate (custom logic if needed)
-        if ($validator && !$validator($ticket)) {
-            return ['success' => false, 'message' => 'Validation failed'];
-        }
-
-        // 3. Prepare data (can be array or callable)
-        $data = is_callable($actionData) ? $actionData($ticket) : $actionData;
-
-        // 4. Perform action
-        $result = $this->ticketRepo->performWorkflowAction(array_merge([
-            'ticket_id' => $ticket->ID,
-            'action_type' => $actionType,
+            'action_type' => 'TEST_SUBMITTED',
             'action_by' => $empData['emp_id'],
-        ], $data));
+            'remark_text' => "Test result: {$validated['test_status']} - {$validated['remarks']}",
+            'remark_type' => 'TESTING',
+        ], function ($data) use ($ticket, $empData, $validated, $attachments, $ticketId) {
+            $this->ticketRepo->updateTesterStatus(
+                $ticket->ID,
+                $empData['emp_id'],
+                $validated['test_status'],
+                $validated['remarks']
+            );
 
-        if (!$result) {
-            return ['success' => false, 'message' => 'Action failed'];
-        }
-
-        // 5. Post-commit actions (notifications, project sync)
-        if ($postCommit) {
-            try {
-                $postCommit($ticket, $empData);
-            } catch (\Exception $e) {
-                Log::warning('Post-commit action failed', [
-                    'ticket_id' => $ticketId,
-                    'action' => $actionType,
-                    'error' => $e->getMessage()
-                ]);
+            if (!empty($attachments)) {
+                $this->ticketRepo->handleAttachments($attachments, $ticketId, $empData['emp_id']);
             }
+        });
+
+        if (!$success) {
+            return ['success' => false, 'message' => 'Failed to submit test result'];
         }
 
-        return ['success' => true, 'message' => 'Action completed successfully'];
+        $testers = $this->ticketRepo->getTesters($ticket->ID);
+        $allCompleted = collect($testers)->where('STATUS', 'PENDING')->isEmpty();
+        $allPassed = collect($testers)->where('STATUS', 'FAILED')->isEmpty();
+
+        $message = "Test result submitted successfully";
+        if ($allCompleted) {
+            $message .= $allPassed ? ". All tests passed!" : ". Some tests failed";
+        }
+
+        $this->syncProjectStatus($ticket->PROJECT_NAME);
+
+        return [
+            'success' => true,
+            'message' => $message,
+            'all_completed' => $allCompleted,
+            'all_passed' => $allPassed,
+            'next_step' => $allCompleted ? ($allPassed ? 'close' : 'return') : 'pending'
+        ];
     }
 
     // ========================
@@ -545,26 +700,22 @@ class TicketService
     {
         $userId = $empData['emp_id'];
 
-        // For Testing/Parallel Run: Only assigned testers can close
         $isTestingTicket = in_array($ticket->TYPE_OF_REQUEST, [
             TicketConstants::REQUEST_TESTING,
             TicketConstants::REQUEST_PARALLEL_RUN
         ]);
 
         if ($isTestingTicket) {
-            // Check if user is an assigned tester
             $isAssignedTester = $this->ticketRepo->getAssignedTester($ticket->ID, $userId);
 
             if (!$isAssignedTester) {
                 return false;
             }
 
-            // Testers can close if all tests passed OR if status is resolved
             return $ticket->STATUS === TicketConstants::STATUS_RESOLVED
                 || $this->ticketRepo->allTestersPassed($ticket->ID);
         }
 
-        // For normal tickets: Only requestor can close when resolved
         return $ticket->STATUS === TicketConstants::STATUS_RESOLVED
             && $ticket->EMPLOYID === $userId;
     }
@@ -579,17 +730,14 @@ class TicketService
 
     private function validateResubmission($ticket, $empData): bool
     {
-        // Only requestor can resubmit
         if ($ticket->EMPLOYID !== $empData['emp_id']) {
             return false;
         }
 
-        // Must be in RETURNED status
         if ($ticket->STATUS !== TicketConstants::STATUS_RETURNED) {
             return false;
         }
 
-        // For Testing/Parallel Run: Can only resubmit if returned by a tester
         $isTestingTicket = in_array($ticket->TYPE_OF_REQUEST, [
             TicketConstants::REQUEST_TESTING,
             TicketConstants::REQUEST_PARALLEL_RUN
@@ -597,10 +745,7 @@ class TicketService
 
         if ($isTestingTicket) {
             $returnedBy = $this->ticketRepo->getReturnedBy($ticket->ID);
-
-            // Check if the person who returned it is a tester
             $wasTesterReturn = $this->ticketRepo->getAssignedTester($ticket->ID, $returnedBy);
-
             return (bool) $wasTesterReturn;
         }
 
@@ -620,6 +765,7 @@ class TicketService
 
         return (bool) $this->ticketRepo->isTesterAssignedAndPending($ticket->ID, $empData['emp_id']);
     }
+
     // ========================
     // AUTHORIZATION
     // ========================
@@ -632,20 +778,16 @@ class TicketService
             TicketConstants::REQUEST_PARALLEL_RUN
         ]);
 
-        // For Testing/Parallel Run tickets - Special handling
         if ($isTestingTicket) {
             $isAssignedTester = $this->ticketRepo->getAssignedTester($ticket->ID, $userId);
 
             if ($isAssignedTester) {
-                // Testers ONLY get TEST action (which includes Pass & Close / Fail & Return)
                 if ($this->canTest($ticket, $currentUser)) {
-                    return ['TEST']; // Only TEST action, no separate CLOSE
+                    return ['TEST'];
                 }
-
                 return [];
             }
 
-            // Requestor of Testing/Parallel Run can only resubmit if tester returned it
             if ($ticket->EMPLOYID === $userId) {
                 if ($this->canResubmit($ticket, $currentUser)) {
                     return [TicketConstants::WORKFLOW_RESUBMITTED];
@@ -653,25 +795,20 @@ class TicketService
                 return [];
             }
 
-            // Programmers can assess/assign Testing/Parallel Run tickets
             if ($this->isProgrammerOrSupervisor($userRoles)) {
                 $actions = [];
-
                 if ($this->canAssess($ticket, $currentUser, $userRoles)) {
                     $actions[] = TicketConstants::WORKFLOW_ASSESSED;
                 }
-
                 if ($this->canAssign($ticket, $userRoles)) {
                     $actions[] = TicketConstants::WORKFLOW_ASSIGNED;
                 }
-
                 return $actions;
             }
 
             return [];
         }
 
-        // Normal workflow for other tickets
         $possibleActions = [
             TicketConstants::WORKFLOW_ASSESSED,
             TicketConstants::WORKFLOW_DH_APPROVED,
@@ -687,6 +824,7 @@ class TicketService
             fn($action) => $this->canPerformAction($ticket, $action, $currentUser, $userRoles)
         ));
     }
+
     public function canPerformAction($ticket, $action, $currentUser, $userRoles): bool
     {
         $validators = [
@@ -708,17 +846,14 @@ class TicketService
     {
         $workflowPath = WorkflowPath::forRequestType($ticket->TYPE_OF_REQUEST);
 
-        // Cannot assess tickets that don't require assessment
         if (!$workflowPath->requiresAssessment) {
             return false;
         }
 
-        // CRITICAL FIX: Programmers cannot assess their own tickets
         if ($currentUser['emp_id'] == $ticket->EMPLOYID) {
             return false;
         }
 
-        // Must be programmer or supervisor
         if (!$this->isProgrammerOrSupervisor($userRoles)) {
             return false;
         }
@@ -728,25 +863,6 @@ class TicketService
             || ($ticket->STATUS == TicketConstants::STATUS_TRIAGED && $wasReturned);
 
         return $validStatus;
-    }
-
-    private function canReturn($ticket, $userRoles): bool
-    {
-        // For Testing/Parallel Run: Only testers can return
-        $isTestingTicket = in_array($ticket->TYPE_OF_REQUEST, [
-            TicketConstants::REQUEST_TESTING,
-            TicketConstants::REQUEST_PARALLEL_RUN
-        ]);
-
-        if ($isTestingTicket) {
-            return false; // Testers use canTest() which handles return via TEST action
-        }
-
-        // For normal tickets: Programmers/supervisors can return during triage
-        return in_array($ticket->STATUS, [
-            TicketConstants::STATUS_NEW,
-            TicketConstants::STATUS_TRIAGED
-        ]) && $this->isProgrammerOrSupervisor($userRoles);
     }
 
     private function canDHApprove($ticket, $userRoles): bool
@@ -814,36 +930,29 @@ class TicketService
     {
         $userId = $currentUser['emp_id'];
 
-        // For Testing/Parallel Run tickets: No separate CLOSE action
-        // Testers use TEST action which handles Pass & Close / Fail & Return
         $isTestingTicket = in_array($ticket->TYPE_OF_REQUEST, [
             TicketConstants::REQUEST_TESTING,
             TicketConstants::REQUEST_PARALLEL_RUN
         ]);
 
         if ($isTestingTicket) {
-            return false; // Testers use TEST action, not CLOSE
+            return false;
         }
 
-        // For normal tickets: Only requestor can close when resolved
         return $ticket->STATUS === TicketConstants::STATUS_RESOLVED
             && $ticket->EMPLOYID === $userId;
     }
 
-
     private function canResubmit($ticket, $currentUser): bool
     {
-        // Only requestor can resubmit
         if ($ticket->EMPLOYID !== $currentUser['emp_id']) {
             return false;
         }
 
-        // Must be in RETURNED status
         if ($ticket->STATUS !== TicketConstants::STATUS_RETURNED) {
             return false;
         }
 
-        // For Testing/Parallel Run: Only allow if returned by tester
         $isTestingTicket = in_array($ticket->TYPE_OF_REQUEST, [
             TicketConstants::REQUEST_TESTING,
             TicketConstants::REQUEST_PARALLEL_RUN
@@ -851,23 +960,19 @@ class TicketService
 
         if ($isTestingTicket) {
             $returnedBy = $this->ticketRepo->getReturnedBy($ticket->ID);
-
-            // Verify the person who returned it is a tester
             $wasTesterReturn = $this->ticketRepo->getAssignedTester($ticket->ID, $returnedBy);
-
             return (bool) $wasTesterReturn;
         }
 
         return true;
     }
+
     private function canTest($ticket, $currentUser): bool
     {
-        // Must be assigned as tester
         if (!$this->ticketRepo->isTesterAssignedAndPending($ticket->ID, $currentUser['emp_id'])) {
             return false;
         }
 
-        // Can test in these statuses
         return in_array($ticket->STATUS, [
             TicketConstants::STATUS_NEW,
             TicketConstants::STATUS_TRIAGED,
@@ -875,6 +980,7 @@ class TicketService
             TicketConstants::STATUS_RESOLVED
         ]);
     }
+
     // ========================
     // ROLE CHECKING
     // ========================
@@ -993,7 +1099,6 @@ class TicketService
     {
         $workflowPath = WorkflowPath::forRequestType($requestType);
 
-        // For Testing and Parallel Run requests
         if ($workflowPath->canDirectAssign) {
             $actions = [
                 TicketConstants::STATUS_NEW => 'Awaiting direct assignment by programmer',
@@ -1007,7 +1112,6 @@ class TicketService
             return $actions[$status] ?? 'Unknown';
         }
 
-        // For requests requiring approvals
         if ($status === TicketConstants::STATUS_TRIAGED && $ticketId) {
             $workflowHistory = $this->ticketRepo->getWorkflowHistory([
                 TicketConstants::WORKFLOW_ASSESSED,
@@ -1081,7 +1185,9 @@ class TicketService
     {
         if (empty($value)) return [];
 
-        $parts = explode(',', $value);
+        // Make sure $parts is always an array
+        $parts = is_array($value) ? $value : explode(',', $value);
+
         $ids = [];
 
         foreach ($parts as $part) {
@@ -1273,90 +1379,6 @@ class TicketService
     }
 
     // ========================
-    // NOTIFICATION HELPERS
-    // ========================
-
-    private function sendAssessmentNotifications($ticket, $empData): void
-    {
-        try {
-            $ticketDetails = $this->ticketRepo->getTicketDetailsForNotification($ticket->ID);
-
-            $this->notificationService->notifyAssessmentComplete(
-                $ticket->TICKET_ID,
-                $ticket->TYPE_OF_REQUEST,
-                $ticketDetails->EMPLOYID ?? null,
-                $empData['emp_name'],
-                $ticket->PROJECT_NAME ?? ''
-            );
-
-            Log::info('Assessment notifications sent', ['ticket_id' => $ticket->TICKET_ID]);
-        } catch (\Exception $e) {
-            Log::warning('Failed to send assessment notification', [
-                'ticket_id' => $ticket->TICKET_ID,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    private function sendDHApprovalNotifications($ticket, $empData): void
-    {
-        try {
-            $this->notificationService->notifyDHApproved(
-                $ticket->TICKET_ID,
-                $ticket->TYPE_OF_REQUEST,
-                $empData['emp_name'],
-                $ticket->PROJECT_NAME
-            );
-
-            Log::info('DH approval notifications sent', ['ticket_id' => $ticket->TICKET_ID]);
-        } catch (\Exception $e) {
-            Log::warning('Failed to send DH approval notification', [
-                'ticket_id' => $ticket->TICKET_ID,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    private function sendODApprovalNotifications($ticket, $empData): void
-    {
-        try {
-            $this->notificationService->notifyODApproved(
-                $ticket->TICKET_ID,
-                $ticket->TYPE_OF_REQUEST,
-                $empData['emp_name'],
-                $ticket->PROJECT_NAME
-            );
-
-            Log::info('OD approval notifications sent', ['ticket_id' => $ticket->TICKET_ID]);
-        } catch (\Exception $e) {
-            Log::warning('Failed to send OD approval notification', [
-                'ticket_id' => $ticket->TICKET_ID,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    private function sendAssignmentNotifications($ticket, $assignedToString, $empData): void
-    {
-        try {
-            $this->notificationService->notifyTicketAssigned(
-                $ticket->TICKET_ID,
-                $ticket->TYPE_OF_REQUEST,
-                $assignedToString,
-                $empData['emp_name'],
-                $ticket->PROJECT_NAME
-            );
-
-            Log::info('Assignment notifications sent', ['ticket_id' => $ticket->TICKET_ID]);
-        } catch (\Exception $e) {
-            Log::warning('Failed to send assignment notification', [
-                'ticket_id' => $ticket->TICKET_ID,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    // ========================
     // PROJECT HELPERS
     // ========================
 
@@ -1368,7 +1390,10 @@ class TicketService
             $projectController = new ProjectController();
             $projectController->updateProjectStatusFromTickets($projectName);
         } catch (\Exception $e) {
-            Log::warning('Failed to sync project status: ' . $e->getMessage());
+            Log::warning('Failed to sync project status', [
+                'project' => $projectName,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
@@ -1386,7 +1411,10 @@ class TicketService
                 $ticket->TICKET_ID
             );
         } catch (\Exception $e) {
-            Log::info('Project not deployed yet: ' . $e->getMessage());
+            Log::info('Project not deployed yet', [
+                'project' => $ticket->PROJECT_NAME,
+                'reason' => $e->getMessage()
+            ]);
             $projectController->updateProjectStatusFromTickets($ticket->PROJECT_NAME);
         }
     }
@@ -1394,8 +1422,6 @@ class TicketService
     // ========================
     // TICKET CREATION HELPERS
     // ========================
-
-
 
     private function logTicketCreation(
         $ticketDbId,

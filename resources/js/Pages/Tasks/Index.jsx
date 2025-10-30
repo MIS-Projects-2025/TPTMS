@@ -246,13 +246,9 @@ const TaskIndex = () => {
                 toggleView={toggleView}
                 searchTerm={searchTerm}
                 onSearch={setSearchTerm}
+                setIsModalOpen={setIsModalOpen}
             />
             <>
-                <div className="flex justify-end mb-4">
-                    <Button type="primary" onClick={() => setIsModalOpen(true)}>
-                        + New Task
-                    </Button>
-                </div>
                 <NewTaskModal
                     open={isModalOpen}
                     onClose={() => setIsModalOpen(false)}

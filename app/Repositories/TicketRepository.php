@@ -4,7 +4,6 @@ namespace App\Repositories;
 
 use Illuminate\Support\Facades\DB;
 use App\Constants\TicketConstants;
-use App\Http\Controllers\ProjectController;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
@@ -178,6 +177,7 @@ class TicketRepository
             ->get()
             ->toArray();
     }
+
     public function getReturnedBy(string $ticketId): ?string
     {
         $returnAction = DB::table('ticket_workflow')
@@ -333,6 +333,18 @@ class TicketRepository
             ->first();
     }
 
+    public function updateTesterStatus($ticketId, $testerId, $status, $remarks)
+    {
+        return DB::table('ticket_testers')
+            ->where('TICKET_ID', $ticketId)
+            ->where('TESTER_ID', $testerId)
+            ->update([
+                'STATUS' => $status,
+                'REMARKS' => $remarks,
+                'TESTED_AT' => now(),
+            ]);
+    }
+
     // ========================
     // EMPLOYEES
     // ========================
@@ -461,21 +473,6 @@ class TicketRepository
         return null;
     }
 
-    public function createProjectFromTicket($ticketId, $projectName, $details, $empData, $requestType)
-    {
-        $projectController = new ProjectController();
-
-        return $projectController->createFromTicket(
-            $projectName ?? ('Project for ' . $ticketId),
-            $details,
-            $empData['emp_dept'],
-            $empData['emp_id'],
-            $empData['emp_id'],
-            $requestType,
-            $ticketId
-        );
-    }
-
     // ========================
     // TICKET UPDATES
     // ========================
@@ -560,24 +557,16 @@ class TicketRepository
     }
 
     // ========================
-    // NOTIFICATIONS
-    // ========================
-
-    public function getTicketDetailsForNotification($ticketDbId)
-    {
-        return DB::table('tickets')
-            ->where('ID', $ticketDbId)
-            ->select(['EMPLOYID', 'DEPARTMENT', 'TICKET_ID', 'PROJECT_NAME', 'TYPE_OF_REQUEST'])
-            ->first();
-    }
-
-    // ========================
     // GENERIC WORKFLOW ACTION EXECUTOR
     // ========================
 
     /**
-     * Generic method for performing any ticket workflow action atomically
-     * This handles all common workflow operations: assess, approve, assign, resolve, close, return, resubmit
+     * Generic atomic transaction wrapper for workflow actions
+     * Handles: workflow logging, status updates, history, remarks, assignments
+     * 
+     * @param array $data - Contains action details (ticket_id, action_type, action_by, statuses, etc.)
+     * @param callable|null $extraAction - Additional database operations to execute within transaction
+     * @return bool - Success status
      */
     public function performWorkflowAction(array $data, ?callable $extraAction = null): bool
     {
@@ -597,7 +586,7 @@ class TicketRepository
                     $this->updateTicketStatus($data['ticket_id'], $data['new_status']);
                 }
 
-                // 3. Workflow-specific action (task creation, project update, test submission, etc.)
+                // 3. Execute extra database action (e.g., update testers, create tasks)
                 if ($extraAction) {
                     $extraAction($data);
                 }
@@ -649,260 +638,5 @@ class TicketRepository
             ]);
             return false;
         }
-    }
-
-    // ========================
-    // SPECIFIC WORKFLOW ACTIONS
-    // ========================
-
-    public function performAssessment(array $data): bool
-    {
-        return $this->performWorkflowAction($data);
-    }
-
-    public function performDHApproval(array $data): bool
-    {
-        return $this->performWorkflowAction($data, function ($data) {
-            $this->updateProjectToReady(
-                $data['project_name'],
-                'DH_APPROVED',
-                $data['action_by'],
-                $data['request_type'],
-                $data['ticket_number']
-            );
-        });
-    }
-
-    public function performApproval(array $data): bool
-    {
-        return $this->performWorkflowAction($data, function ($data) {
-            if (isset($data['update_project']) && $data['update_project']) {
-                $this->updateProjectToReady(
-                    $data['project_name'],
-                    $data['approval_type'],
-                    $data['action_by'],
-                    $data['request_type'],
-                    $data['ticket_number']
-                );
-            }
-        });
-    }
-
-    public function performAssignment(array $data): array
-    {
-        try {
-            $taskId = null;
-
-            $success = $this->performWorkflowAction($data, function ($data) use (&$taskId) {
-                // Create linked task
-                $taskId = $this->createTaskFromTicket(
-                    $data['ticket_number'],
-                    $data['project_name'],
-                    $data['remark_text'],
-                    $data['assigned_to'],
-                    $data['action_by']
-                );
-
-                // Update project to IN_PROGRESS
-                $this->updateProjectToInProgress(
-                    $data['project_name'],
-                    $data['assigned_to'],
-                    $data['action_by'],
-                    $data['request_type'],
-                    $data['ticket_number']
-                );
-            });
-
-            return [
-                'success' => $success,
-                'task_id' => $taskId,
-                'message' => $success ? 'Assignment completed' : 'Assignment failed'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Assignment failed', [
-                'ticket_id' => $data['ticket_id'],
-                'error' => $e->getMessage()
-            ]);
-            return [
-                'success' => false,
-                'message' => 'Assignment failed: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    public function performResolution(array $data): array
-    {
-        $success = $this->performWorkflowAction(array_merge($data, [
-            'action_type' => TicketConstants::WORKFLOW_RESOLVED,
-            'action_by' => $data['resolved_by'] ?? null,
-            'remark_text' => $data['remarks'] ?? null,
-        ]), function ($d) {
-            // Handle attachments for resolution
-            if (!empty($d['attachments'])) {
-                $this->handleAttachments(
-                    $d['attachments'],
-                    $d['ticket_number'] ?? null,
-                    $d['resolved_by'] ?? null
-                );
-            }
-        });
-
-        return [
-            'success' => $success,
-            'message' => $success ? 'Ticket resolved' : 'Resolution failed'
-        ];
-    }
-
-    public function performClosure(array $data): array
-    {
-        $success = $this->performWorkflowAction(array_merge($data, [
-            'action_type' => TicketConstants::WORKFLOW_CLOSED,
-            'action_by' => $data['closed_by'] ?? null,
-            'remark_text' => $data['remarks'] ?? null,
-            'metadata' => ['rating' => $data['rating'] ?? null],
-        ]));
-
-        return [
-            'success' => $success,
-            'message' => $success ? 'Ticket closed successfully' : 'Closure failed'
-        ];
-    }
-
-    public function performReturn(array $data): array
-    {
-        $success = $this->performWorkflowAction(array_merge($data, [
-            'action_type' => TicketConstants::WORKFLOW_RETURNED,
-            'action_by' => $data['returned_by'] ?? null,
-            'remark_text' => $data['remarks'] ?? null,
-        ]));
-
-        return [
-            'success' => $success,
-            'message' => $success ? 'Ticket returned successfully' : 'Return failed'
-        ];
-    }
-
-    public function performResubmission(array $data): array
-    {
-        $success = $this->performWorkflowAction(array_merge($data, [
-            'action_type' => TicketConstants::WORKFLOW_RESUBMITTED,
-            'action_by' => $data['resubmitted_by'] ?? null,
-            'remark_text' => 'Requestor resubmitted ticket after clarification.',
-        ]));
-
-        return [
-            'success' => $success,
-            'message' => $success ? 'Ticket resubmitted successfully' : 'Resubmission failed'
-        ];
-    }
-
-    public function performSubmitTestResult(array $data): array
-    {
-        try {
-            $success = $this->performWorkflowAction($data, function ($data) {
-                // Update tester status
-                DB::table('ticket_testers')
-                    ->where('TICKET_ID', $data['ticket_id'])
-                    ->where('TESTER_ID', $data['tester_id'])
-                    ->update([
-                        'STATUS' => $data['test_status'],
-                        'REMARKS' => $data['remarks'],
-                        'TESTED_AT' => now(),
-                    ]);
-
-                // Handle attachments
-                if (!empty($data['attachments'])) {
-                    $this->handleAttachments(
-                        $data['attachments'],
-                        $data['ticket_number'],
-                        $data['tester_id']
-                    );
-                }
-
-                // Additional remark for testing
-                $this->insertRemark(
-                    $data['ticket_id'],
-                    $data['tester_id'],
-                    'TESTING',
-                    "Test result: {$data['test_status']} - {$data['remarks']}"
-                );
-            });
-
-            // Check completion and pass status after transaction
-            $testers = DB::table('ticket_testers')
-                ->where('TICKET_ID', $data['ticket_id'])
-                ->whereNull('DELETED_AT')
-                ->get();
-
-            $allCompleted = $testers->where('STATUS', 'PENDING')->isEmpty();
-            $allPassed = $testers->where('STATUS', 'FAILED')->isEmpty();
-
-            $message = "Test result submitted successfully";
-            if ($allCompleted) {
-                $message .= $allPassed ? ". All tests passed!" : ". Some tests failed";
-            }
-
-            return [
-                'success' => $success,
-                'message' => $message,
-                'all_completed' => $allCompleted,
-                'all_passed' => $allPassed,
-                'next_step' => $allCompleted
-                    ? ($allPassed ? 'close' : 'return')
-                    : 'pending'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Test submission failed', [
-                'ticket_id' => $data['ticket_id'],
-                'error' => $e->getMessage()
-            ]);
-            return [
-                'success' => false,
-                'message' => 'Failed to submit test result: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    // ========================
-    // PROJECT INTEGRATION
-    // ========================
-
-    private function updateProjectToReady($projectName, $approvalType, $approvedBy, $requestType, $ticketId)
-    {
-        $projectController = new ProjectController();
-
-        return $projectController->updateToReady(
-            $projectName,
-            $approvalType,
-            $approvedBy,
-            $requestType,
-            $ticketId
-        );
-    }
-
-    private function updateProjectToInProgress($projectName, $assignedTo, $assignedBy, $requestType, $ticketId)
-    {
-        $projectController = new ProjectController();
-
-        return $projectController->updateToInProgress(
-            $projectName,
-            $assignedTo,
-            $assignedBy,
-            $requestType,
-            $ticketId
-        );
-    }
-
-    private function createTaskFromTicket($ticketId, $projectName, $remarks, $assignedTo, $createdBy)
-    {
-        $taskController = new \App\Http\Controllers\TaskController();
-
-        return $taskController->createFromTicket(
-            $ticketId,
-            $projectName,
-            $remarks,
-            $assignedTo,
-            $createdBy
-        );
     }
 }
