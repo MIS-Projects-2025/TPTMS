@@ -67,6 +67,26 @@ class TaskController extends Controller
         }
     }
 
+
+    public function getExistingTasks($empId)
+    {
+        $tasks = DB::connection('task')->select('
+        SELECT 
+            TASK_ID, EMPLOYID, TASK_TITLE, SOURCE_TYPE, SOURCE_ID,
+            STATUS, PRIORITY, CREATED_AT
+        FROM daily_tasks 
+        WHERE EMPLOYID = ? 
+        AND DELETED_AT IS NULL
+        ORDER BY 
+            CASE WHEN STATUS = ? THEN 0 ELSE 1 END,
+            PRIORITY ASC,
+            CREATED_AT DESC
+        LIMIT 10
+    ', [$empId, self::STATUS_IN_PROGRESS]);
+
+        return response()->json($tasks);
+    }
+
     /**
      * Update task status
      */

@@ -253,7 +253,9 @@ const TaskIndex = () => {
                     open={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
                     onCreate={handleCreateTask}
-                />{" "}
+                    empId={emp_data?.emp_id}
+                />
+
                 {error && (
                     <Alert
                         message="Error"

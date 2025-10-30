@@ -531,6 +531,23 @@ class TicketRepository
             'CHANGED_AT' => now(),
         ]);
     }
+    public function getAssignedTickets($empId)
+    {
+        return DB::connection('mysql')->select('
+        SELECT 
+            t.TICKET_ID as value,
+            CONCAT(t.TICKET_ID, " - ", t.PROJECT_NAME) as label,
+            t.PROJECT_NAME,
+            t.DETAILS,
+            t.TYPE_OF_REQUEST
+        FROM tickets t
+        WHERE FIND_IN_SET(?, t.ASSIGNED_TO) > 0 
+        AND t.STATUS IN ("5", "6") 
+        AND t.DELETED_AT IS NULL 
+        ORDER BY t.CREATED_AT DESC
+    ', [$empId]);
+    }
+
 
     // ========================
     // STATUS COUNTS

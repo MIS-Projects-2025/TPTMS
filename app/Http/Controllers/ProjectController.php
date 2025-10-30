@@ -354,6 +354,21 @@ class ProjectController extends Controller
 
         return $projId;
     }
+    public function getAssignedProjects($empId)
+    {
+        $projects = DB::connection('projects')->select('
+        SELECT 
+            PROJ_ID as value,
+            CONCAT(PROJ_NAME, " (", PROJ_DEPT, ")") as label,
+            PROJ_NAME,
+            TARGET_DEADLINE
+        FROM project_list 
+        WHERE FIND_IN_SET(?, ASSIGNED_PROGS) > 0
+        ORDER BY PROJ_NAME ASC
+    ', [$empId]);
+
+        return response()->json($projects);
+    }
 
     /**
      * Update project status to READY (2)

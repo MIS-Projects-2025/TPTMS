@@ -146,7 +146,16 @@ class TicketingController extends Controller
         ])->with('flash', ['message' => 'Tickets loaded successfully']);
     }
 
-
+    public function getAssignedTickets($empId)
+    {
+        try {
+            $tickets = $this->ticketService->getAssignedTickets($empId);
+            return response()->json($tickets, 200);
+        } catch (\Exception $e) {
+            Log::error("Error fetching assigned tickets: " . $e->getMessage());
+            return response()->json(['error' => 'Failed to load assigned tickets'], 500);
+        }
+    }
 
 
 

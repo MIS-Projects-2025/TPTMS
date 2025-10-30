@@ -1459,4 +1459,9 @@ class TicketService
             $initialStatus
         );
     }
+    public function getAssignedTickets($empId)
+    {
+
+        return $this->ticketRepo->getAssignedTickets($empId);
+    }
 }

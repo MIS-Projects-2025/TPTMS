@@ -6,6 +6,9 @@ use App\Models\NotificationUser;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use App\Http\Middleware\AuthMiddleware; // Re-importing custom middleware
+use App\Http\Controllers\TicketingController;
+// ========== PUBLIC API ROUTES (No authentication required) ==========
+
 
 
 
@@ -140,4 +143,5 @@ Route::prefix('api')->middleware(AuthMiddleware::class)->group(function () {
             'unread_count' => $user->notifications()->whereNull('read_at')->count(),
         ]);
     });
+    Route::get('/tickets/assigned/{empId}', [TicketingController::class, 'getAssignedTickets']);
 });

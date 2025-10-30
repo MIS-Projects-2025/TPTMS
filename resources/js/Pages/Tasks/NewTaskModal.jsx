@@ -39,6 +39,7 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                 `/api/tickets/assigned/${empId}?status=active`
             );
             setTickets(res.data || []);
+            console.log(res.data);
         } catch (err) {
             console.error("Failed to load tickets", err);
         }
@@ -108,8 +109,8 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                     >
                         <Select showSearch placeholder="Search ticket...">
                             {tickets.map((t) => (
-                                <Option key={t.TICKET_ID} value={t.TICKET_ID}>
-                                    {t.TICKET_ID} - {t.TITLE}
+                                <Option key={t.value} value={t.value}>
+                                    {t.label}
                                 </Option>
                             ))}
                         </Select>
