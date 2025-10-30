@@ -22,7 +22,6 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
     const [projects, setProjects] = useState([]);
     const [tickets, setTickets] = useState([]);
 
-    // 🔹 Fetch projects assigned to programmer
     const fetchProjects = async () => {
         try {
             const res = await axios.get(`/api/projects/assigned/${empId}`);
@@ -32,14 +31,12 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
         }
     };
 
-    // 🔹 Fetch tickets assigned to programmer (not complete)
     const fetchTickets = async () => {
         try {
             const res = await axios.get(
                 `/api/tickets/assigned/${empId}?status=active`
             );
             setTickets(res.data || []);
-            console.log(res.data);
         } catch (err) {
             console.error("Failed to load tickets", err);
         }
@@ -72,23 +69,26 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
             onCancel={onClose}
             footer={null}
             centered
-            width={700}
+            width={800}
+            className="new-task-modal"
         >
-            <Form form={form} layout="vertical" onFinish={handleSubmit}>
-                {/* 🔸 Common Fields */}
+            <Form
+                form={form}
+                layout="vertical"
+                onFinish={handleSubmit}
+                className="grid grid-cols-2 gap-x-6 gap-y-2 dark:text-gray-200"
+            >
+                {/* Common Fields */}
                 <Form.Item
                     label="Source Type"
                     name="SOURCE_TYPE"
                     rules={[
-                        {
-                            required: true,
-                            message: "Please select a source type",
-                        },
+                        { required: true, message: "Select a source type" },
                     ]}
                 >
                     <Select
                         placeholder="Select Source Type"
-                        onChange={(value) => setSourceType(value)}
+                        onChange={(v) => setSourceType(v)}
                     >
                         <Option value="ticket">From Active Ticket</Option>
                         <Option value="project">From Project</Option>
@@ -100,12 +100,7 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                     <Form.Item
                         label="Select Ticket"
                         name="SOURCE_ID"
-                        rules={[
-                            {
-                                required: true,
-                                message: "Please select a ticket",
-                            },
-                        ]}
+                        rules={[{ required: true, message: "Select a ticket" }]}
                     >
                         <Select showSearch placeholder="Search ticket...">
                             {tickets.map((t) => (
@@ -122,10 +117,7 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                         label="Select Project"
                         name="SOURCE_ID"
                         rules={[
-                            {
-                                required: true,
-                                message: "Please select a project",
-                            },
+                            { required: true, message: "Select a project" },
                         ]}
                     >
                         <Select showSearch placeholder="Search project...">
@@ -138,12 +130,7 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                     </Form.Item>
                 )}
 
-                <Form.Item
-                    label="Status"
-                    name="STATUS"
-                    initialValue={1}
-                    rules={[{ required: true }]}
-                >
+                <Form.Item label="Status" name="STATUS" initialValue={1}>
                     <Select>
                         <Option value={1}>Pending</Option>
                         <Option value={2}>In Progress</Option>
@@ -153,12 +140,7 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                     </Select>
                 </Form.Item>
 
-                <Form.Item
-                    label="Priority"
-                    name="PRIORITY"
-                    initialValue={3}
-                    rules={[{ required: true }]}
-                >
+                <Form.Item label="Priority" name="PRIORITY" initialValue={3}>
                     <Select>
                         <Option value={1}>Urgent</Option>
                         <Option value={2}>High</Option>
@@ -168,95 +150,86 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                     </Select>
                 </Form.Item>
 
-                <Divider>Task Details</Divider>
+                <div className="col-span-2">
+                    <Divider>Task Details</Divider>
+                </div>
 
-                {/* 🔸 Multiple Task Titles + Descriptions */}
-                <Form.List
-                    name="TASKS"
-                    rules={[
-                        {
-                            validator: async (_, tasks) => {
-                                if (!tasks || tasks.length < 1) {
-                                    return Promise.reject(
-                                        new Error("Add at least one task")
-                                    );
-                                }
+                <div className="col-span-2">
+                    <Form.List
+                        name="TASKS"
+                        rules={[
+                            {
+                                validator: async (_, tasks) => {
+                                    if (!tasks || tasks.length < 1)
+                                        return Promise.reject(
+                                            new Error("Add at least one task")
+                                        );
+                                },
                             },
-                        },
-                    ]}
-                >
-                    {(fields, { add, remove }) => (
-                        <>
-                            {fields.map(({ key, name, ...restField }) => (
-                                <Space
-                                    key={key}
-                                    direction="vertical"
-                                    style={{
-                                        display: "flex",
-                                        marginBottom: 12,
-                                        border: "1px solid #f0f0f0",
-                                        padding: 12,
-                                        borderRadius: 6,
-                                    }}
-                                >
-                                    <Form.Item
-                                        {...restField}
-                                        label="Task Title"
-                                        name={[name, "TASK_TITLE"]}
-                                        rules={[
-                                            {
-                                                required: true,
-                                                message: "Enter task title",
-                                            },
-                                        ]}
+                        ]}
+                    >
+                        {(fields, { add, remove }) => (
+                            <>
+                                {fields.map(({ key, name, ...restField }) => (
+                                    <Space
+                                        key={key}
+                                        direction="vertical"
+                                        className="block p-3 mb-2 border rounded-lg "
                                     >
-                                        <Input placeholder="Enter title..." />
-                                    </Form.Item>
+                                        <Form.Item
+                                            {...restField}
+                                            label="Task Title"
+                                            name={[name, "TASK_TITLE"]}
+                                            rules={[{ required: true }]}
+                                        >
+                                            <Input
+                                                placeholder="Enter title..."
+                                                className="input input-bordered w-full rounded-lg text-sm h-10"
+                                            />
+                                        </Form.Item>
 
-                                    <Form.Item
-                                        {...restField}
-                                        label="Task Description"
-                                        name={[name, "TASK_DESCRIPTION"]}
-                                        rules={[
-                                            {
-                                                required: true,
-                                                message:
-                                                    "Enter task description",
-                                            },
-                                        ]}
-                                    >
-                                        <TextArea
-                                            placeholder="Enter description..."
-                                            rows={3}
-                                        />
-                                    </Form.Item>
+                                        <Form.Item
+                                            {...restField}
+                                            label="Description"
+                                            name={[name, "TASK_DESCRIPTION"]}
+                                            rules={[{ required: true }]}
+                                        >
+                                            <TextArea
+                                                rows={3}
+                                                placeholder="Enter description..."
+                                                className="textarea textarea-bordered w-full rounded-lg text-sm resize-y"
+                                            />
+                                        </Form.Item>
 
+                                        <div className="text-right">
+                                            <Button
+                                                type="dashed"
+                                                danger
+                                                icon={<MinusCircleOutlined />}
+                                                onClick={() => remove(name)}
+                                            >
+                                                Remove
+                                            </Button>
+                                        </div>
+                                    </Space>
+                                ))}
+
+                                <Form.Item>
                                     <Button
                                         type="dashed"
-                                        danger
-                                        icon={<MinusCircleOutlined />}
-                                        onClick={() => remove(name)}
+                                        onClick={() => add()}
+                                        block
+                                        icon={<PlusOutlined />}
                                     >
-                                        Remove
+                                        Add Another Task
                                     </Button>
-                                </Space>
-                            ))}
+                                </Form.Item>
+                            </>
+                        )}
+                    </Form.List>
+                </div>
 
-                            <Form.Item>
-                                <Button
-                                    type="dashed"
-                                    onClick={() => add()}
-                                    block
-                                    icon={<PlusOutlined />}
-                                >
-                                    Add Another Task
-                                </Button>
-                            </Form.Item>
-                        </>
-                    )}
-                </Form.List>
-
-                <div className="flex justify-end gap-2 mt-4">
+                <div className="col-span-2 flex justify-end gap-2 mt-4">
                     <Button onClick={onClose}>Cancel</Button>
                     <Button type="primary" htmlType="submit" loading={loading}>
                         Create Task(s)

@@ -3,36 +3,18 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
-use App\Constants\TicketConstants;
-use App\Services\TicketService;
+use App\Services\TaskService;
+use App\Constants\TaskConstants;
 
 class TaskController extends Controller
 {
-    protected $ticketService;
+    protected $taskService;
 
-    public function __construct(TicketService $ticketService)
+    public function __construct(TaskService $taskService)
     {
-        $this->ticketService = $ticketService;
-    }
-
-    // ✅ Numeric status constants
-    const STATUS_PENDING = 1;
-    const STATUS_IN_PROGRESS = 2;
-    const STATUS_COMPLETED = 3;
-    const STATUS_ON_HOLD = 4;
-    const STATUS_CANCELLED = 5;
-
-    // ✅ Source type strings
-    const SOURCE_TICKET = 'TICKET';
-    const SOURCE_PROJECT = 'PROJECT';
-    const SOURCE_MANUAL = 'MANUAL';
-
-    protected function taskDB()
-    {
-        return DB::connection('task');
+        $this->taskService = $taskService;
     }
 
     /**
@@ -44,11 +26,8 @@ class TaskController extends Controller
         if (!$empData) return redirect()->route('login');
 
         try {
-            $tasks = $this->taskDB()->table('daily_tasks')
-                ->whereNull('DELETED_AT')
-                ->orderByDesc('CREATED_AT')
-                ->get()
-                ->map(fn($task) => $this->formatTask($task));
+            $tasks = $this->taskService->getTasksForUser($empData['emp_id'])
+                ->map(fn($task) => $this->taskService->formatTask($task));
 
             Log::info('Tasks loaded', ['count' => $tasks->count()]);
 
@@ -67,23 +46,9 @@ class TaskController extends Controller
         }
     }
 
-
     public function getExistingTasks($empId)
     {
-        $tasks = DB::connection('task')->select('
-        SELECT 
-            TASK_ID, EMPLOYID, TASK_TITLE, SOURCE_TYPE, SOURCE_ID,
-            STATUS, PRIORITY, CREATED_AT
-        FROM daily_tasks 
-        WHERE EMPLOYID = ? 
-        AND DELETED_AT IS NULL
-        ORDER BY 
-            CASE WHEN STATUS = ? THEN 0 ELSE 1 END,
-            PRIORITY ASC,
-            CREATED_AT DESC
-        LIMIT 10
-    ', [$empId, self::STATUS_IN_PROGRESS]);
-
+        $tasks = $this->taskService->getExistingTasks($empId);
         return response()->json($tasks);
     }
 
@@ -97,7 +62,25 @@ class TaskController extends Controller
             'remarks' => 'nullable|string|max:500',
         ]);
 
-        return $this->completeTask($taskId, $validated['status'], $validated['remarks'] ?? null);
+        $empData = session('emp_data');
+        if (!$empData) return response()->json(['error' => 'Unauthorized'], 401);
+
+        try {
+            $task = $this->taskService->completeTask(
+                $taskId,
+                $validated['status'],
+                $validated['remarks'] ?? null,
+                $empData
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Task status updated successfully',
+                'task' => $this->taskService->formatTask($task),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
     }
 
     /**
@@ -105,80 +88,25 @@ class TaskController extends Controller
      */
     public function quickComplete($taskId)
     {
-        return $this->completeTask($taskId, self::STATUS_COMPLETED, 'Task marked as completed');
-    }
-
-    /**
-     * Unified task completion / status update
-     */
-    private function completeTask($taskId, $newStatus, $remarks = null)
-    {
         $empData = session('emp_data');
         if (!$empData) return response()->json(['error' => 'Unauthorized'], 401);
 
-        $task = $this->taskDB()->table('daily_tasks')
-            ->where('TASK_ID', $taskId)
-            ->whereNull('DELETED_AT')
-            ->first();
-
-        if (!$task) return response()->json(['error' => 'Task not found'], 404);
-
-        if ($task->STATUS == $newStatus) {
-            return response()->json(['error' => 'Task already has this status'], 400);
-        }
-
-        $oldStatus = $task->STATUS;
-
-        // Update task
-        $this->taskDB()->table('daily_tasks')
-            ->where('TASK_ID', $taskId)
-            ->update([
-                'STATUS' => $newStatus,
-                'UPDATED_BY' => $empData['emp_id'],
-                'UPDATED_AT' => now(),
-            ]);
-
-        // Log action for all assigned employees
-        $assignedEmployees = explode(',', $task->EMPLOYID);
-        foreach ($assignedEmployees as $empId) {
-            $this->logAction(
+        try {
+            $task = $this->taskService->completeTask(
                 $taskId,
-                $this->getActionType($newStatus),
-                $remarks ?? $this->getDefaultDescription($oldStatus, $newStatus),
-                $oldStatus,
-                $newStatus,
-                $empId,
-                $empData['emp_id']
+                TaskConstants::STATUS_COMPLETED,
+                'Task marked as completed',
+                $empData
             );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Task completed successfully',
+                'task' => $this->taskService->formatTask($task),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
         }
-
-        // Auto-resolve ticket if task source is TICKET and all related tasks are completed
-        if ($task->SOURCE_TYPE === self::SOURCE_TICKET) {
-            $ticketId = $task->SOURCE_ID;
-
-            $remainingTasks = $this->taskDB()->table('daily_tasks')
-                ->where('SOURCE_TYPE', self::SOURCE_TICKET)
-                ->where('SOURCE_ID', $ticketId)
-                ->whereNull('DELETED_AT')
-                ->where('STATUS', '!=', self::STATUS_COMPLETED)
-                ->count();
-
-            if ($remainingTasks === 0) {
-                $this->ticketService->resolveTicket(
-                    $ticketId,
-                    $empData,
-                    'All related tasks completed'
-                );
-            }
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Task status updated successfully',
-            'task' => $this->formatTask(
-                $this->taskDB()->table('daily_tasks')->where('TASK_ID', $taskId)->first()
-            ),
-        ]);
     }
 
     /**
@@ -191,38 +119,16 @@ class TaskController extends Controller
 
         $validated = $request->validate(['note' => 'required|string|max:1000']);
 
-        $task = $this->taskDB()->table('daily_tasks')
-            ->where('TASK_ID', $taskId)
-            ->whereNull('DELETED_AT')
-            ->first();
+        try {
+            $this->taskService->addProgressNote($taskId, $validated['note'], $empData);
 
-        if (!$task) return response()->json(['error' => 'Task not found'], 404);
-
-        $this->taskDB()->table('daily_tasks')
-            ->where('TASK_ID', $taskId)
-            ->update([
-                'PROGRESS_NOTES' => $validated['note'],
-                'UPDATED_AT' => now(),
+            return response()->json([
+                'success' => true,
+                'message' => 'Progress note updated successfully',
             ]);
-
-        // Log note for all employees
-        $assignedEmployees = explode(',', $task->EMPLOYID);
-        foreach ($assignedEmployees as $empId) {
-            $this->logAction(
-                $taskId,
-                'NOTE_ADDED',
-                $validated['note'],
-                $task->STATUS,
-                $task->STATUS,
-                $empId,
-                $empData['emp_id']
-            );
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Progress note updated successfully',
-        ]);
     }
 
     /**
@@ -230,148 +136,24 @@ class TaskController extends Controller
      */
     public function getHistory($taskId)
     {
-        $logs = $this->taskDB()->table('task_logs')
-            ->where('TASK_ID', $taskId)
-            ->orderByDesc('CREATED_AT')
-            ->get();
-
-        $statusMap = $this->getStatusMap();
-
-        $formattedLogs = $logs->map(fn($log) => [
-            'action_type' => $log->ACTION_TYPE,
-            'description' => $log->DESCRIPTION,
-            'old_status' => $statusMap[$log->OLD_STATUS] ?? null,
-            'new_status' => $statusMap[$log->NEW_STATUS] ?? null,
-            'created_by' => $log->CREATED_BY,
-            'created_at' => $log->CREATED_AT,
-        ]);
-
-        return response()->json(['logs' => $formattedLogs]);
+        $logs = $this->taskService->getTaskHistory($taskId);
+        return response()->json(['logs' => $logs]);
     }
 
     /**
-     * Create task from ticket (support multiple employees)
+     * Create task from ticket
      */
     public function createFromTicket($ticketCode, $projId, $remarks, $assignedToCsv, $createdBy)
     {
-        try {
-            $taskCode = $this->generateTaskId();
+        $taskCode = $this->taskService->createFromTicket(
+            $ticketCode,
+            $projId,
+            $remarks,
+            $assignedToCsv,
+            $createdBy
+        );
 
-            $this->taskDB()->table('daily_tasks')->insert([
-                'TASK_ID' => $taskCode,
-                'TASK_DATE' => now()->format('Y-m-d'),
-                'EMPLOYID' => $assignedToCsv, // CSV of multiple employees
-                'SOURCE_TYPE' => self::SOURCE_TICKET,
-                'SOURCE_ID' => $ticketCode,
-                'TASK_TITLE' => 'Ticket: ' . $ticketCode,
-                'TASK_DESCRIPTION' => $remarks ?? 'Assigned for work',
-                'PRIORITY' => 3,
-                'STATUS' => self::STATUS_PENDING,
-                'CREATED_BY' => $createdBy,
-                'CREATED_AT' => now(),
-                'UPDATED_AT' => now(),
-            ]);
-
-            return $taskCode;
-        } catch (\Exception $e) {
-            Log::error('createFromTicket() failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * Log action
-     */
-    public function logAction($taskId, $actionType, $description, $oldStatus, $newStatus, $assignedTo, $createdBy)
-    {
-        $this->taskDB()->table('task_logs')->insert([
-            'TASK_ID' => $taskId,
-            'ACTION_TYPE' => $actionType,
-            'DESCRIPTION' => $description,
-            'OLD_STATUS' => $oldStatus,
-            'NEW_STATUS' => $newStatus,
-            'ASSIGNED_TO' => $assignedTo,
-            'CREATED_BY' => $createdBy,
-            'CREATED_AT' => now(),
-        ]);
-    }
-
-    /**
-     * Generate Task ID
-     */
-    private function generateTaskId()
-    {
-        $count = $this->taskDB()->table('daily_tasks')
-            ->whereDate('CREATED_AT', now())
-            ->count() + 1;
-
-        return 'TSK-' . sprintf('%03d', $count);
-    }
-
-    /**
-     * Format task for frontend
-     */
-    private function formatTask($task)
-    {
-        $statusMap = $this->getStatusMap();
-        $sourceMap = $this->getSourceMap();
-
-        return [
-            'id' => $task->TASK_ID,
-            'date' => $task->TASK_DATE,
-            'title' => $task->TASK_TITLE,
-            'description' => $task->TASK_DESCRIPTION,
-            'status' => $task->STATUS,
-            'status_label' => $statusMap[$task->STATUS] ?? 'Unknown',
-            'source_type' => $task->SOURCE_TYPE,
-            'source_label' => $sourceMap[$task->SOURCE_TYPE] ?? 'Unknown',
-            'source_id' => $task->SOURCE_ID,
-            'priority' => $task->PRIORITY ?? 3,
-            'created_by' => $task->CREATED_BY,
-            'created_at' => $task->CREATED_AT,
-            'updated_at' => $task->UPDATED_AT,
-            'employee_ids' => explode(',', $task->EMPLOYID),
-            'progress_notes' => $task->PROGRESS_NOTES,
-        ];
-    }
-
-    private function getStatusMap()
-    {
-        return [
-            self::STATUS_PENDING => 'Pending',
-            self::STATUS_IN_PROGRESS => 'In Progress',
-            self::STATUS_COMPLETED => 'Completed',
-            self::STATUS_ON_HOLD => 'On Hold',
-            self::STATUS_CANCELLED => 'Cancelled',
-        ];
-    }
-
-    private function getSourceMap()
-    {
-        return [
-            self::SOURCE_TICKET => 'Ticket',
-            self::SOURCE_PROJECT => 'Project',
-            self::SOURCE_MANUAL => 'Manual',
-        ];
-    }
-
-    private function getActionType($status)
-    {
-        return [
-            self::STATUS_PENDING => 'REVERTED',
-            self::STATUS_IN_PROGRESS => 'STARTED',
-            self::STATUS_COMPLETED => 'COMPLETED',
-            self::STATUS_ON_HOLD => 'PAUSED',
-            self::STATUS_CANCELLED => 'CANCELLED',
-        ][$status] ?? 'UPDATED';
-    }
-
-    private function getDefaultDescription($oldStatus, $newStatus)
-    {
-        $statusMap = $this->getStatusMap();
-        return "Status changed from {$statusMap[$oldStatus]} to {$statusMap[$newStatus]}";
+        return $taskCode ? response()->json(['task_id' => $taskCode])
+            : response()->json(['error' => 'Failed to create task'], 500);
     }
 }
