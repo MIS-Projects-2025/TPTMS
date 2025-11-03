@@ -16,7 +16,7 @@ Route::prefix($app_name)
 
         // Get all tasks (main page)
         Route::get('/tasks', [TaskController::class, 'getTask'])->name('tasks');
-
+        Route::post('/tasks/store', [TaskController::class, 'store'])->name('tasks.store');
         // Task actions
         Route::post('/tasks/{taskId}/status', [TaskController::class, 'updateStatus'])->name('tasks.status');
         Route::post('/tasks/{taskId}/complete', [TaskController::class, 'quickComplete'])->name('tasks.complete');

@@ -38,7 +38,24 @@ const TaskIndex = () => {
 
     const handleCreateTask = async (data) => {
         console.log("Creating new task with data:", data);
+        try {
+            const response = await axios.post(route("tasks.store"), data);
+            console.log("Task creation response:", response.data);
+
+            if (response.data.success) {
+                message.success("Tasks created successfully!");
+                router.reload({ only: ["tasks"] });
+            } else {
+                message.error(response.data.error || "Failed to create tasks");
+            }
+        } catch (error) {
+            console.error("Task creation error:", error);
+            message.error(
+                error.response?.data?.error || "Error creating tasks"
+            );
+        }
     };
+
     // Debug log to check what we're receiving
     console.log("Tasks from props:", tasks);
     console.log("Current user:", currentUser);

@@ -122,7 +122,7 @@ const NewTaskModal = ({ open, onClose, onCreate, empId }) => {
                     >
                         <Select showSearch placeholder="Search project...">
                             {projects.map((p) => (
-                                <Option key={p.PROJ_ID} value={p.PROJ_ID}>
+                                <Option key={p.value} value={p.value}>
                                     {p.PROJ_NAME}
                                 </Option>
                             ))}

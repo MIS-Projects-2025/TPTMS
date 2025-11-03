@@ -4,18 +4,82 @@ namespace App\Services;
 
 use App\Repositories\TaskRepository;
 use App\Constants\TaskConstants;
+use App\Constants\ProjectConstants;
 use Illuminate\Support\Facades\Log;
 
 class TaskService
 {
     protected $taskRepository;
     protected $ticketService;
+    protected $projectService;
 
-    public function __construct(TaskRepository $taskRepository, TicketService $ticketService)
+    public function __construct(TaskRepository $taskRepository, TicketService $ticketService, ProjectService $projectService)
     {
         $this->taskRepository = $taskRepository;
         $this->ticketService = $ticketService;
+        $this->projectService = $projectService;
     }
+    public function createTask(array $data)
+    {
+        return $this->taskRepository->createTask($data);
+    }
+    public function createBulkTasks(array $data, $createdBy)
+    {
+        if (empty($data['TASKS']) || !is_array($data['TASKS'])) {
+            throw new \InvalidArgumentException('Invalid task data: TASKS array is required.');
+        }
+
+        foreach ($data['TASKS'] as $task) {
+            $taskId = $this->generateTaskId();
+
+            $taskData = [
+                'TASK_ID'          => $taskId,
+                'TASK_DATE'        => now()->format('Y-m-d'),
+                'EMPLOYID'         => $createdBy,
+                'SOURCE_TYPE'      => strtoupper($data['SOURCE_TYPE']),
+                'SOURCE_ID'        => $data['SOURCE_ID'] ?? null,
+                'TASK_TITLE'       => ucfirst($task['TASK_TITLE']),
+                'TASK_DESCRIPTION' => $task['TASK_DESCRIPTION'] ?? null,
+                'PRIORITY'         => $data['PRIORITY'] ?? 3,
+                'STATUS'           => $data['STATUS'] ?? TaskConstants::STATUS_PENDING,
+                'CREATED_BY'       => $createdBy,
+                'CREATED_AT'       => now(),
+            ];
+
+            // ✅ Create task
+            $this->taskRepository->createTask($taskData);
+
+            // ✅ Log task creation
+            $this->taskRepository->logAction([
+                'TASK_ID'     => $taskId,
+                'ACTION_TYPE' => 'Created',
+                'DESCRIPTION' => 'Task added via modal',
+                'CREATED_BY'  => $createdBy,
+                'CREATED_AT'  => now(),
+            ]);
+
+            // ✅ If linked to a project, update project status and log it
+            if (strtolower($data['SOURCE_TYPE']) === 'project' && !empty($data['SOURCE_ID'])) {
+                try {
+                    // In TaskService
+                    $this->projectService->updateProjectStatusById(
+                        $data['SOURCE_ID'],
+                        ProjectConstants::PROJ_STATUS_IN_PROGRESS,
+                        $createdBy,
+                        [],
+                        NULL,
+                        $taskId
+                    );
+                } catch (\Exception $e) {
+                    Log::warning('Failed to update project status from task creation', [
+                        'project_id' => $data['SOURCE_ID'],
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+    }
+
 
     /**
      * Get all tasks for user (from session)
@@ -61,6 +125,14 @@ class TaskService
         $statusMap = TaskConstants::getStatusMap();
         $sourceMap = TaskConstants::getSourceMap();
 
+        $projectName = null;
+
+        // ✅ If task is from a project, get the project name
+        if (strtolower($task->SOURCE_TYPE) === 'project' && !empty($task->SOURCE_ID)) {
+            $project = $this->projectService->getProjectById($task->SOURCE_ID);
+            $projectName = $project->PROJ_NAME ?? null;
+        }
+
         return [
             'id' => $task->TASK_ID,
             'date' => $task->TASK_DATE,
@@ -71,6 +143,7 @@ class TaskService
             'source_type' => $task->SOURCE_TYPE,
             'source_label' => $sourceMap[$task->SOURCE_TYPE] ?? 'Unknown',
             'source_id' => $task->SOURCE_ID,
+            'source_name' => $projectName, // ✅ Added project name if applicable
             'priority' => $task->PRIORITY ?? 3,
             'created_by' => $task->CREATED_BY,
             'created_at' => $task->CREATED_AT,
@@ -79,6 +152,7 @@ class TaskService
             'progress_notes' => $task->PROGRESS_NOTES,
         ];
     }
+
 
     /**
      * Complete task with status update
@@ -112,6 +186,33 @@ class TaskService
         // Auto-resolve ticket if applicable
         if ($task->SOURCE_TYPE === TaskConstants::SOURCE_TICKET) {
             $this->handleTicketAutoResolution($task->SOURCE_ID, $empData);
+        }
+        // ✅ If task is linked to a project, check if all tasks are completed
+        if (strtolower($task->SOURCE_TYPE) === 'project' && !empty($task->SOURCE_ID)) {
+            $remainingTasks = $this->taskRepository->countRemainingTasks(
+                'project',
+                $task->SOURCE_ID,
+                [TaskConstants::STATUS_IN_PROGRESS, TaskConstants::STATUS_PENDING]
+            );
+
+            // If no more tasks are pending or in progress, mark project as completed
+            if ($remainingTasks === 0) {
+                try {
+                    $this->projectService->updateProjectStatusById(
+                        $task->SOURCE_ID,
+                        ProjectConstants::PROJ_STATUS_DEPLOYED,
+                        $empData['emp_id'],
+                        [],
+                        NULL,
+                        $taskId
+                    );
+                } catch (\Exception $e) {
+                    Log::warning('Failed to auto-complete project after final task completion', [
+                        'project_id' => $task->SOURCE_ID,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
         }
 
         return $this->taskRepository->findTask($taskId);
@@ -226,9 +327,11 @@ class TaskService
      */
     private function generateTaskId()
     {
-        $count = $this->taskRepository->countTodayTasks() + 1;
-        return 'TSK-' . sprintf('%03d', $count);
+        $latest = $this->taskRepository->getLatestTaskId(); // e.g., "TSK-005"
+        $lastNum = $latest ? intval(substr($latest, 4)) : 0;
+        return 'TSK-' . sprintf('%03d', $lastNum + 1);
     }
+
 
     /**
      * Get default description for status change

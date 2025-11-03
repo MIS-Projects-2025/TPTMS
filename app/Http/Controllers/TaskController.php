@@ -16,6 +16,33 @@ class TaskController extends Controller
     {
         $this->taskService = $taskService;
     }
+    public function store(Request $request)
+    {
+        $empData = session('emp_data');
+        if (!$empData) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            'SOURCE_TYPE' => 'required|string',
+            'SOURCE_ID' => 'max:50',
+            'STATUS' => 'required|integer',
+            'PRIORITY' => 'required|integer',
+            'TASKS' => 'required|array|min:1',
+            'TASKS.*.TASK_TITLE' => 'required|string|max:255',
+            'TASKS.*.TASK_DESCRIPTION' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            $this->taskService->createBulkTasks($validated, $empData['emp_id']);
+
+            return response()->json(['success' => true, 'message' => 'Tasks created successfully']);
+        } catch (\Exception $e) {
+            Log::error('Task creation failed: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to create tasks'], 500);
+        }
+    }
+
 
     /**
      * Get tasks for current user

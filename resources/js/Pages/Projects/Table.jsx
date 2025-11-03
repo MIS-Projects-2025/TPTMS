@@ -66,7 +66,7 @@ export default function ProjectsTable() {
         const encoded = encodeParams(updated);
         setLoading(true);
         router.get(
-            route("projects.list"),
+            route("project.list"),
             { q: encoded },
             { preserveState: true, onFinish: () => setLoading(false) }
         );
@@ -79,7 +79,7 @@ export default function ProjectsTable() {
         const encoded = encodeParams(updated);
         setLoading(true);
         router.get(
-            route("projects.list"),
+            route("project.list"),
             { q: encoded },
             { preserveState: true, onFinish: () => setLoading(false) }
         );
@@ -92,7 +92,7 @@ export default function ProjectsTable() {
         const encoded = encodeParams(updated);
         setLoading(true);
         router.get(
-            route("projects.list"),
+            route("project.list"),
             { q: encoded },
             { preserveState: true, onFinish: () => setLoading(false) }
         );

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ProjectController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Broadcast;
 use App\Models\NotificationUser;
@@ -144,4 +145,5 @@ Route::prefix('api')->middleware(AuthMiddleware::class)->group(function () {
         ]);
     });
     Route::get('/tickets/assigned/{empId}', [TicketingController::class, 'getAssignedTickets']);
+    Route::get('/projects/assigned/{empId}', [ProjectController::class, 'getAssignedProjects']);
 });

@@ -11,7 +11,7 @@ Route::prefix($app_name)
     ->group(function () {
 
         Route::get('/projects/datatable', [ProjectController::class, 'getProjectsDataTable'])
-            ->name('projects.list');
+            ->name('project.list');
 
         // Excel Import Routes
         Route::post('/projectList/import', [ProjectController::class, 'importExcel'])->name('project.import');

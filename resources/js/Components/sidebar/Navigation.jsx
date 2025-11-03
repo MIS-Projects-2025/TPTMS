@@ -46,7 +46,7 @@ export default function NavLinks({ isSidebarOpen }) {
                 isSidebarOpen={isSidebarOpen}
             />
             <SidebarLink
-                href={route("projects.list")}
+                href={route("project.list")}
                 label="Projects"
                 icon={<FolderKanban className="w-5 h-5" />}
                 isSidebarOpen={isSidebarOpen}

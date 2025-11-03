@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Repositories\TicketRepository;
 use App\Constants\TicketConstants;
 use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\ProjectController;
+use App\Services\ProjectService;
 use App\Http\Controllers\TaskController;
 use App\Services\NotificationService;
 use App\ValueObjects\WorkflowPath;
@@ -14,7 +14,8 @@ class TicketService
 {
     public function __construct(
         private TicketRepository $ticketRepo,
-        private NotificationService $notificationService
+        private NotificationService $notificationService,
+        private ProjectService $projectService
     ) {}
 
     // ========================
@@ -112,8 +113,8 @@ class TicketService
 
         $projId = null;
         if ($validated['request_type'] == TicketConstants::REQUEST_NEW_SYSTEM) {
-            $projectController = new ProjectController();
-            $projId = $projectController->createFromTicket(
+
+            $projId = $this->projectService->createFromTicket(
                 $projectName ?? ('Project for ' . $ticketId),
                 $validated['details'],
                 $empData['emp_dept'],
@@ -278,8 +279,8 @@ class TicketService
             'remark_text' => $remarks ?? 'Approved by Department Head',
             'remark_type' => 'APPROVAL',
         ], function ($data) use ($ticket, $empData) {
-            $projectController = new ProjectController();
-            $projectController->updateToReady(
+
+            $this->projectService->updateToReady(
                 $ticket->PROJECT_NAME,
                 'DH_APPROVED',
                 $empData['emp_id'],
@@ -326,8 +327,8 @@ class TicketService
             'remark_text' => $remarks ?? 'Approved by Operations Director',
             'remark_type' => 'APPROVAL',
         ], function ($data) use ($ticket, $empData) {
-            $projectController = new ProjectController();
-            $projectController->updateToReady(
+
+            $this->projectService->updateToReady(
                 $ticket->PROJECT_NAME,
                 'OD_APPROVED',
                 $empData['emp_id'],
@@ -386,8 +387,7 @@ class TicketService
                 );
             }
 
-            $projectController = new ProjectController();
-            $projectController->updateToInProgress(
+            $this->projectService->updateToInProgress(
                 $ticket->PROJECT_NAME,
                 implode(',', $assignedTo),
                 $empData['emp_id'],
@@ -1387,8 +1387,7 @@ class TicketService
         if (empty($projectName)) return;
 
         try {
-            $projectController = new ProjectController();
-            $projectController->updateProjectStatusFromTickets($projectName);
+            $this->projectService->updateProjectStatusFromTickets($projectName);
         } catch (\Exception $e) {
             Log::warning('Failed to sync project status', [
                 'project' => $projectName,
@@ -1401,10 +1400,9 @@ class TicketService
     {
         if (empty($ticket->PROJECT_NAME)) return;
 
-        $projectController = new ProjectController();
 
         try {
-            $projectController->updateToDeployed(
+            $this->projectService->updateToDeployed(
                 $ticket->PROJECT_NAME,
                 $userId,
                 $ticket->TYPE_OF_REQUEST,
@@ -1415,7 +1413,7 @@ class TicketService
                 'project' => $ticket->PROJECT_NAME,
                 'reason' => $e->getMessage()
             ]);
-            $projectController->updateProjectStatusFromTickets($ticket->PROJECT_NAME);
+            $this->projectService->updateProjectStatusFromTickets($ticket->PROJECT_NAME);
         }
     }
 

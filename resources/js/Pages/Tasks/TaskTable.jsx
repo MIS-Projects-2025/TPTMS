@@ -34,6 +34,31 @@ const TaskTable = ({
             render: (id) => <strong>{id}</strong>,
         },
         {
+            title: "Source Type",
+            dataIndex: "source_type",
+            key: "source_type",
+            width: 180,
+            render: (_, record) => (
+                <div>
+                    <strong>
+                        {record.source_type
+                            ? record.source_type
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, (char) =>
+                                      char.toUpperCase()
+                                  )
+                            : ""}
+                    </strong>
+                    {record.source_name && (
+                        <div className="text-sm text-gray-500">
+                            {record.source_name}
+                        </div>
+                    )}
+                </div>
+            ),
+        },
+
+        {
             title: "Title",
             dataIndex: "title",
             key: "title",
