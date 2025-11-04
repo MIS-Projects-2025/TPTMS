@@ -44,9 +44,21 @@ export default function NotificationBell() {
         return date.toLocaleDateString();
     };
 
-    // Handle notification click - redirect to ticket and mark as read
+    // Handle notification click - different behavior for projects vs tickets
     const handleNotificationClick = async (notif) => {
         console.log("Notification clicked:", notif);
+
+        // Parse data if it's a string
+        const notifData =
+            typeof notif.data === "string"
+                ? JSON.parse(notif.data)
+                : notif.data || {};
+
+        // Get notification type - check both the class name and data.type
+        const notifType = notifData.type || notif.type;
+        const isProjectNotification =
+            notifType === "PROJECT_STATUS_CHANGED" ||
+            notifType?.includes("ProjectStatusChangedNotification");
 
         // Mark as read if unread
         if (!notif.read_at) {
@@ -56,19 +68,21 @@ export default function NotificationBell() {
         // Close the dropdown
         setIsOpen(false);
 
-        // Redirect to ticket view with action required
-        if (notif.ticket_id) {
-            // Parse data to get action_required
-            const notifData =
-                typeof notif.data === "string"
-                    ? JSON.parse(notif.data)
-                    : notif.data || {};
+        // Handle PROJECT notifications - just redirect to projects list
+        if (isProjectNotification) {
+            console.log("Redirecting to projects list");
+            const redirectUrl = notifData.redirect_url || route("project.list");
+            window.location.href = redirectUrl;
+            return;
+        }
 
-            // Check action_required in root level first, then in data
+        // Handle TICKET notifications - redirect with action required
+        if (notif.ticket_id || notifData.ticket_id) {
+            const ticketId = notifData.ticket_id || notif.ticket_id;
             const actionRequired =
                 notif.action_required || notifData.action_required || "VIEW";
             console.log("Redirecting with action:", actionRequired);
-            const hash = btoa(`${notif.ticket_id}:${actionRequired}`);
+            const hash = btoa(`${ticketId}:${actionRequired}`);
             window.location.href = route("tickets.view", hash);
         }
     };
@@ -81,7 +95,16 @@ export default function NotificationBell() {
             TICKET_ASSIGNED: "bg-purple-500/10 border-l-purple-500",
             TICKET_RESOLVED: "bg-emerald-500/10 border-l-emerald-500",
             TICKET_CLOSED: "bg-gray-500/10 border-l-gray-500",
+            TICKET_RETURNED: "bg-orange-500/10 border-l-orange-500",
+            TICKET_RESUBMITTED: "bg-yellow-500/10 border-l-yellow-500",
+            PROJECT_STATUS_CHANGED: "bg-indigo-500/10 border-l-indigo-500",
         };
+
+        // Check if it's a project notification by class name
+        if (type?.includes("ProjectStatusChangedNotification")) {
+            return "bg-indigo-500/10 border-l-indigo-500";
+        }
+
         return styles[type] || "bg-info/10 border-l-info";
     };
 
@@ -93,7 +116,16 @@ export default function NotificationBell() {
             TICKET_ASSIGNED: "👤",
             TICKET_RESOLVED: "🎉",
             TICKET_CLOSED: "🔒",
+            TICKET_RETURNED: "↩️",
+            TICKET_RESUBMITTED: "🔄",
+            PROJECT_STATUS_CHANGED: "📊",
         };
+
+        // Check if it's a project notification by class name
+        if (type?.includes("ProjectStatusChangedNotification")) {
+            return "📊";
+        }
+
         return icons[type] || "📢";
     };
 
@@ -107,6 +139,8 @@ export default function NotificationBell() {
             RESOLVE: "🔧 Resolve",
             ASSIGN: "👥 Assign",
             VIEW: "👁 View",
+            CLARIFY: "💬 Clarify",
+            REASSESS: "🔍 Reassess",
         };
         return labels[actionRequired] || "👁 View";
     };
@@ -167,16 +201,34 @@ export default function NotificationBell() {
                                         ? JSON.parse(notif.data)
                                         : notif.data || {};
 
-                                const ticketId =
-                                    notifData.ticket_id || notif.ticket_id;
+                                const type = notifData.type || notif.type;
                                 const message =
                                     notifData.message || notif.message;
-                                const type = notifData.type || notif.type;
+
+                                // Project notification fields
+                                const projectId = notifData.project_id;
+                                const projectName =
+                                    notifData.project_name || notif.project;
+                                const department = notifData.department;
+                                const oldStatus = notifData.old_status;
+                                const newStatus = notifData.new_status;
+
+                                // Ticket notification fields
+                                const ticketId =
+                                    notifData.ticket_id || notif.ticket_id;
                                 const project =
                                     notifData.project_name || notif.project;
                                 const requestType = notifData.request_type;
                                 const actionRequired =
-                                    notif.action_required || "VIEW";
+                                    notif.action_required ||
+                                    notifData.action_required;
+
+                                // Determine if it's a project or ticket notification
+                                const isProjectNotification =
+                                    type === "PROJECT_STATUS_CHANGED" ||
+                                    type?.includes(
+                                        "ProjectStatusChangedNotification"
+                                    );
 
                                 return (
                                     <div
@@ -202,7 +254,7 @@ export default function NotificationBell() {
                                     >
                                         <div className="flex justify-between items-start gap-3">
                                             <div className="flex-1">
-                                                {/* Ticket ID with icon */}
+                                                {/* Notification header with icon */}
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <span className="text-lg">
                                                         {getNotificationIcon(
@@ -210,7 +262,9 @@ export default function NotificationBell() {
                                                         )}
                                                     </span>
                                                     <p className="font-bold text-sm text-primary">
-                                                        {ticketId}
+                                                        {isProjectNotification
+                                                            ? projectName
+                                                            : ticketId}
                                                     </p>
                                                     {!notif.read_at && (
                                                         <span className="badge badge-xs badge-primary">
@@ -224,27 +278,56 @@ export default function NotificationBell() {
                                                     {message}
                                                 </p>
 
-                                                {/* Project, Request Type, and Action Required */}
+                                                {/* Project-specific or Ticket-specific badges */}
                                                 <div className="flex flex-wrap gap-2 mt-2">
-                                                    {project && (
-                                                        <span className="badge badge-sm badge-outline">
-                                                            📁 {project}
-                                                        </span>
-                                                    )}
-                                                    {requestType && (
-                                                        <span className="badge badge-sm badge-ghost">
-                                                            {requestType}
-                                                        </span>
-                                                    )}
-                                                    {actionRequired &&
-                                                        actionRequired !==
-                                                            "VIEW" && (
-                                                            <span className="badge badge-sm badge-warning">
-                                                                {getActionLabel(
-                                                                    actionRequired
+                                                    {isProjectNotification ? (
+                                                        // Project notification badges
+                                                        <>
+                                                            {department && (
+                                                                <span className="badge badge-sm badge-outline">
+                                                                    🏢{" "}
+                                                                    {department}
+                                                                </span>
+                                                            )}
+                                                            {oldStatus &&
+                                                                newStatus && (
+                                                                    <span className="badge badge-sm badge-info">
+                                                                        {
+                                                                            oldStatus
+                                                                        }{" "}
+                                                                        →{" "}
+                                                                        {
+                                                                            newStatus
+                                                                        }
+                                                                    </span>
                                                                 )}
-                                                            </span>
-                                                        )}
+                                                        </>
+                                                    ) : (
+                                                        // Ticket notification badges
+                                                        <>
+                                                            {project && (
+                                                                <span className="badge badge-sm badge-outline">
+                                                                    📁 {project}
+                                                                </span>
+                                                            )}
+                                                            {requestType && (
+                                                                <span className="badge badge-sm badge-ghost">
+                                                                    {
+                                                                        requestType
+                                                                    }
+                                                                </span>
+                                                            )}
+                                                            {actionRequired &&
+                                                                actionRequired !==
+                                                                    "VIEW" && (
+                                                                    <span className="badge badge-sm badge-warning">
+                                                                        {getActionLabel(
+                                                                            actionRequired
+                                                                        )}
+                                                                    </span>
+                                                                )}
+                                                        </>
+                                                    )}
                                                 </div>
 
                                                 {/* Timestamp */}

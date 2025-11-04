@@ -12,6 +12,7 @@ use App\Notifications\TicketClosedNotification;
 use App\Notifications\TicketReturnedNotification;
 use App\Notifications\TicketResubmittedNotification;
 use App\Models\NotificationUser;
+use App\Notifications\ProjectStatusChangedNotification;
 
 class NotificationService
 {
@@ -427,5 +428,135 @@ class NotificationService
             self::REQUEST_PARALLEL_RUN => 'Parallel Run',
         ];
         return $labels[$requestType] ?? 'Unknown';
+    }
+
+    /**
+     * Notify when project status changes
+     * Notifies: Requestor, Handler, Assigned Programmers, Supervisors+, Directors, and Presidents
+     * This is informational only - no action required
+     */
+    public function notifyProjectStatusChanged($projectId, $oldStatus, $newStatus, $changedBy, $projectName, $department)
+    {
+        Log::info("=== NOTIFYING PROJECT STATUS CHANGE: {$projectId} ===", [
+            'old_status' => $oldStatus,
+            'new_status' => $newStatus,
+            'project' => $projectName
+        ]);
+
+        $recipients = $this->getProjectStatusChangeRecipients($projectId, $department);
+
+        if (empty($recipients)) {
+            Log::warning("No recipients found for project status change notification");
+            return ['success' => 0, 'failed' => 0];
+        }
+
+        // No action required - informational only
+        $actionRequiredMap = [];
+        foreach ($recipients as $rec) {
+            $actionRequiredMap[$rec] = null;
+        }
+
+        return $this->sendNotifications(
+            $recipients,
+            new ProjectStatusChangedNotification(
+                $projectId,
+                $projectName,
+                $oldStatus,
+                $newStatus,
+                $changedBy,
+                $department
+            ),
+            "PROJECT_STATUS_CHANGED",
+            $actionRequiredMap
+        );
+    }
+
+    /**
+     * Get recipients for project status change notification
+     * Based on EMPPOSITION hierarchy
+     */
+    private function getProjectStatusChangeRecipients($projectId, $department)
+    {
+        $recipients = [];
+
+        // Get project details
+        $project = DB::connection('projects')->selectOne("
+        SELECT PROJ_REQUESTOR, PROJ_HANDLER, ASSIGNED_PROGS 
+        FROM project_list 
+        WHERE PROJ_ID = ? AND DELETED_AT IS NULL
+    ", [$projectId]);
+
+        if (!$project) {
+            Log::warning("Project not found: {$projectId}");
+            return [];
+        }
+
+        // Add requestor
+        if (!empty($project->PROJ_REQUESTOR)) {
+            $recipients[] = $project->PROJ_REQUESTOR;
+        }
+
+        // Add handler
+        if (!empty($project->PROJ_HANDLER)) {
+            $recipients[] = $project->PROJ_HANDLER;
+        }
+
+        // Add assigned programmers
+        if (!empty($project->ASSIGNED_PROGS)) {
+            $assignedProgs = $this->extractMultipleEmployeeIds($project->ASSIGNED_PROGS);
+            $recipients = array_merge($recipients, $assignedProgs);
+        }
+
+        // Add department hierarchy (Supervisor, Section Head, Manager)
+        $deptHierarchy = $this->getDepartmentHierarchy($department);
+        $recipients = array_merge($recipients, $deptHierarchy);
+
+        // Always add Directors (position 5)
+        $directors = $this->getEmployeesByPosition(5);
+        $recipients = array_merge($recipients, $directors);
+
+        // Always add Presidents (position 6)
+        $presidents = $this->getEmployeesByPosition(6);
+        $recipients = array_merge($recipients, $presidents);
+
+        // Remove duplicates and filter empty values
+        return array_unique(array_filter($recipients));
+    }
+
+    /**
+     * Get department hierarchy (Supervisors, Section Heads, Managers)
+     * EMPPOSITION: 2-Supervisor, 3-Section Head, 4-Manager
+     */
+    private function getDepartmentHierarchy($department)
+    {
+        if (empty($department)) {
+            return [];
+        }
+
+        $hierarchy = DB::connection('masterlist')->select("
+        SELECT DISTINCT EMPLOYID 
+        FROM employee_masterlist 
+        WHERE DEPARTMENT = ? 
+        AND EMPPOSITION IN (2, 3, 4)
+        AND ACCSTATUS = 1
+    ", [$department]);
+
+        return array_map(fn($h) => $h->EMPLOYID, $hierarchy);
+    }
+
+    /**
+     * Get employees by position
+     * 0-Admin, 1-Rank&File, 2-Supervisor, 3-SectionHead, 4-Manager, 5-Director, 6-President
+     */
+    private function getEmployeesByPosition($position)
+    {
+        $employees = DB::connection('masterlist')->select("
+        SELECT DISTINCT EMPLOYID 
+        FROM employee_masterlist 
+        WHERE EMPPOSITION = ? 
+        AND ACCSTATUS = 1
+    ", [$position]);
+
+        return array_map(fn($e) => $e->EMPLOYID, $employees);
     }
 }

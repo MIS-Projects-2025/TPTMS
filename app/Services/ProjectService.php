@@ -12,10 +12,14 @@ class ProjectService
 {
     protected $projectRepository;
     protected $statusMapping;
+    protected $notificationService;
 
-    public function __construct(ProjectRepository $projectRepository)
-    {
+    public function __construct(
+        ProjectRepository $projectRepository,
+        NotificationService $notificationService
+    ) {
         $this->projectRepository = $projectRepository;
+        $this->notificationService = $notificationService;
         $this->statusMapping = ProjectConstants::getStatusMapping();
     }
 
@@ -23,11 +27,12 @@ class ProjectService
     {
         $filters = [
             'search' => trim($request->input('search', '')),
-            'department' => $request->input('department', ''),
+            'department' => $request->input('department'),
             'status' => $request->input('status', ''),
             'sortField' => $request->input('sortField', 'created_at'),
             'sortOrder' => $request->input('sortOrder', 'desc'),
         ];
+
 
         // Convert status filter to IDs
         if ($filters['status']) {
@@ -166,6 +171,9 @@ class ProjectService
             throw new \Exception("Project not found: $projectName");
         }
 
+        // Store old status for notification
+        $oldStatus = $project->PROJ_STATUS;
+
         $updateData = [
             'PROJ_STATUS' => $newStatus,
             'UPDATED_AT' => now(),
@@ -189,6 +197,31 @@ class ProjectService
             $requestType,
             $ticketId
         );
+
+        // Send notification if status actually changed
+        if ($oldStatus != $newStatus) {
+            try {
+                $this->notificationService->notifyProjectStatusChanged(
+                    $project->PROJ_ID,
+                    $oldStatus,
+                    $newStatus,
+                    $updatedBy,
+                    $projectName,
+                    $project->PROJ_DEPT
+                );
+
+                Log::info("Project status change notification sent", [
+                    'project_id' => $project->PROJ_ID,
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus
+                ]);
+            } catch (\Exception $e) {
+                Log::error("Failed to send project status change notification: " . $e->getMessage(), [
+                    'project_id' => $project->PROJ_ID,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
     }
     public function updateProjectStatusById($projectId, $newStatus, $updatedBy, $additionalData = [], $requestType = null, $ticketId = null)
     {
@@ -197,6 +230,9 @@ class ProjectService
             throw new \Exception("Project not found: $projectId");
         }
 
+        // Store old status for notification
+        $oldStatus = $project->PROJ_STATUS;
+
         $updateData = [
             'PROJ_STATUS' => $newStatus,
             'UPDATED_AT' => now(),
@@ -220,6 +256,31 @@ class ProjectService
             $requestType,
             $ticketId
         );
+
+        // Send notification if status actually changed
+        if ($oldStatus != $newStatus) {
+            try {
+                $this->notificationService->notifyProjectStatusChanged(
+                    $project->PROJ_ID,
+                    $oldStatus,
+                    $newStatus,
+                    $updatedBy,
+                    $project->PROJ_NAME,
+                    $project->PROJ_DEPT
+                );
+
+                Log::info("Project status change notification sent", [
+                    'project_id' => $project->PROJ_ID,
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus
+                ]);
+            } catch (\Exception $e) {
+                Log::error("Failed to send project status change notification: " . $e->getMessage(), [
+                    'project_id' => $project->PROJ_ID,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
     }
     public function updateToReady($projectName, $approvalType, $updatedBy, $requestType = null, $ticketId = null)
     {

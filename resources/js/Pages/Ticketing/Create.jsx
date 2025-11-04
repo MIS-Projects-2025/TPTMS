@@ -27,12 +27,21 @@ const Create = () => {
     const parentParam = params.get("parent");
     const projectParam = params.get("project");
     const userParam = params.get("user");
-
+    const actionParam = params.get("action");
     // Decode safely (only once)
     const parentFromUrl = parentParam ? atob(parentParam) : null;
     const projectFromUrl = projectParam ? atob(projectParam) : null;
     const userFromUrl = userParam ? atob(userParam) : null;
     const isNewTicketFromProj = Boolean(projectParam && !parentParam);
+    const isNewProj = Boolean(actionParam);
+    console.log(isNewProj);
+
+    console.log(
+        isNewTicketFromProj
+            ? "New Ticket from Project URL detected"
+            : "Not a New Ticket from Project URL"
+    );
+
     console.log("URL params:", Object.fromEntries(params.entries()));
     console.log("Decoded Parent:", parentFromUrl);
     console.log("Decoded Project:", projectFromUrl);
@@ -42,7 +51,7 @@ const Create = () => {
 
     // ✅ Initialize form data
     const { data, setData, post, processing, errors, reset } = useForm({
-        request_type: null,
+        request_type: isNewProj ? 1 : null,
         project: projectFromUrl || null,
         project_name: projectFromUrl || null,
         parent_ticket: parentFromUrl || null,
@@ -189,34 +198,33 @@ const Create = () => {
                                         className="w-full rounded-lg text-sm h-10"
                                         showSearch
                                         optionFilterProp="children"
+                                        disabled={isNewProj}
                                     >
                                         {requestTypes
                                             .filter((rt) => {
-                                                // 🔹 If NOT a child ticket → show all
-                                                if (!isChildTicket) return true;
-
-                                                // 🔹 If Child Ticket + user matches logged-in user → only show 5 and 6
-                                                if (
-                                                    isChildTicket &&
-                                                    userFromUrl !=
+                                                // 🔹 New ticket from project → hide type 1
+                                                if (isNewTicketFromProj)
+                                                    return rt.value !== 1;
+                                                if (isNewProj)
+                                                    return rt.value === 1;
+                                                // 🔹 Child ticket
+                                                if (isChildTicket) {
+                                                    // Child ticket + user not the same → show only 5 and 6
+                                                    if (
+                                                        userFromUrl !=
                                                         emp_data.emp_id
-                                                ) {
-                                                    return [5, 6].includes(
-                                                        rt.value
-                                                    );
-                                                }
+                                                    )
+                                                        return [5, 6].includes(
+                                                            rt.value
+                                                        );
 
-                                                // 🔹 If Child Ticket + user is NOT the same → hide 1, 5, and 6
-                                                if (
-                                                    isChildTicket &&
-                                                    userFromUrl ===
-                                                        emp_data.emp_id
-                                                ) {
+                                                    // Child ticket + user same → hide 1, 5, 6
                                                     return ![1, 5, 6].includes(
                                                         rt.value
                                                     );
                                                 }
 
+                                                // 🔹 Regular ticket → show all
                                                 return true;
                                             })
                                             .map((rt) => (

@@ -33,7 +33,16 @@ class ProjectController extends Controller
         }
 
         try {
+            $showAllDepartments = $this->isMISOrODRole($empData);
+
+            if (!$showAllDepartments) {
+                $request->merge(['department' => $empData['emp_dept']]);
+            }
+
             $result = $this->projectService->getProjectsDataTable($request);
+
+            // Pass flag to frontend
+            $result['showAllDepartments'] = $showAllDepartments;
 
             return Inertia::render('Projects/Table', $result)
                 ->with('flash', ['message' => 'Projects loaded successfully']);
@@ -41,6 +50,56 @@ class ProjectController extends Controller
             return redirect()->back()->with('error', 'Failed to load projects: ' . $e->getMessage());
         }
     }
+
+
+    private function isProgrammer($empData)
+    {
+        $dept = strtoupper($empData['emp_dept'] ?? '');
+        $jobTitle = strtolower($empData['emp_jobtitle'] ?? '');
+
+        return $dept === 'MIS' &&
+            (
+                strpos($jobTitle, 'programmer') !== false ||
+                (strpos($jobTitle, 'mis') !== false && strpos($jobTitle, 'supervisor') !== false)
+            );
+    }
+
+    private function isMISSupervisor($empData)
+    {
+        $dept = strtoupper($empData['emp_dept'] ?? '');
+        $jobTitle = strtolower($empData['emp_jobtitle'] ?? '');
+
+        return $dept === 'MIS' && strpos($jobTitle, 'supervisor') !== false;
+    }
+
+    private function isMisManager($empData)
+    {
+        $dept = strtoupper($empData['emp_dept'] ?? '');
+        $position = $empData['emp_position'] ?? 0;
+
+        return stripos($dept, 'MIS') !== false && $position == 4;
+    }
+
+    private function isODAccount($empData)
+    {
+        $dept = strtoupper($empData['emp_dept'] ?? '');
+        $jobTitle = strtoupper($empData['emp_jobtitle'] ?? '');
+
+        return $dept === 'OPERATIONS' || $jobTitle === 'OPERATIONS DIRECTOR';
+    }
+    private function isMISRole($empData)
+    {
+        return $this->isProgrammer($empData) || $this->isMISSupervisor($empData) || $this->isMisManager($empData);
+    }
+    /**
+     * Returns true if the user is a MIS role (Programmer, Supervisor, Manager)
+     */
+    private function isMISOrODRole($empData)
+    {
+        return $this->isMISRole($empData) || $this->isODAccount($empData);
+    }
+
+
 
     public function getProjectLogs($projectId)
     {

@@ -32,6 +32,10 @@ class AuthMiddleware
                 return redirect("http://192.168.2.221/authify/public/login?redirect={$redirectUrl}");
             }
 
+            $systemRole = null;
+            if (stripos($currentUser->emp_jobtitle, 'programmer') !== false) {
+                $systemRole = 'Programmer';
+            }
             // 4️⃣ Set session
             session(['emp_data' => [
                 'token' => $currentUser->token,
@@ -43,6 +47,7 @@ class AuthMiddleware
                 'emp_prodline' => $currentUser->emp_prodline,
                 'emp_station' => $currentUser->emp_station,
                 'generated_at' => $currentUser->generated_at,
+                'emp_system_role' => $systemRole,
             ]]);
 
             // 5️⃣ Store NotificationUser for broadcasting

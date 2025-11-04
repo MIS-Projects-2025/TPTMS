@@ -30,7 +30,9 @@ export default function ProjectsTable() {
         filters: initialFilters,
         departments,
         appName,
+        showAllDepartments,
     } = usePage().props;
+    console.log(usePage().props);
 
     const [loading, setLoading] = useState(false);
     const [searchValue, setSearchValue] = useState(
@@ -327,6 +329,7 @@ export default function ProjectsTable() {
                 departments={departments}
                 onDepartmentChange={handleDepartmentChange}
                 setShowImportModal={setShowImportModal}
+                showAllDepartments={showAllDepartments}
             />
 
             <Spin spinning={loading}>

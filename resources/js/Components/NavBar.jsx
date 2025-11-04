@@ -48,7 +48,7 @@ export default function NavBar() {
                                 className="p-2 shadow-md dropdown-content menu bg-base-100 rounded-box z-1 w-52"
                             >
                                 <li>
-                                    <a>
+                                    <a href={route("profile.index")}>
                                         <svg
                                             xmlns="http://www.w3.org/2000/svg"
                                             fill="none"

@@ -26,7 +26,21 @@ export default function ProjectLayout({ children }) {
                         <h2 className="font-semibold mb-3 text-sm uppercase text-gray-500">
                             Actions
                         </h2>
-                        <button className="btn btn-primary btn-sm w-full flex items-center gap-2 justify-center">
+                        <button
+                            className="btn btn-primary btn-sm w-full flex items-center gap-2 justify-center"
+                            onClick={() => {
+                                // Encode parameters
+                                const newEncoded = btoa("new"); // only passing 'new'
+                                const params = new URLSearchParams({
+                                    action: newEncoded,
+                                });
+
+                                // Redirect to tickets route with encoded query
+                                window.location.href = `${route(
+                                    "tickets"
+                                )}?${params.toString()}`;
+                            }}
+                        >
                             <PlusCircle className="w-4 h-4" />
                             New Project
                         </button>
