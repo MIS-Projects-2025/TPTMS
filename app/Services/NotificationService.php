@@ -361,13 +361,27 @@ class NotificationService
 
     private function extractMultipleEmployeeIds($value)
     {
-        if (empty($value)) return [];
+        // If it's already an array, return it
+        if (is_array($value)) {
+            return array_filter(array_map('trim', $value));
+        }
+
+        // If it's empty, return empty array
+        if (empty($value)) {
+            return [];
+        }
+
+        // If it's a string, process it
         $parts = explode(',', $value);
         $ids = [];
         foreach ($parts as $part) {
             $part = trim($part);
-            if (strpos($part, '(') !== false) $part = trim(substr($part, 0, strpos($part, '(')));
-            if (!empty($part)) $ids[] = $part;
+            if (strpos($part, '(') !== false) {
+                $part = trim(substr($part, 0, strpos($part, '(')));
+            }
+            if (!empty($part)) {
+                $ids[] = $part;
+            }
         }
         return array_unique($ids);
     }

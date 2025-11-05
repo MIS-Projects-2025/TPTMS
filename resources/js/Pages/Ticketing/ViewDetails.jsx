@@ -1,7 +1,7 @@
 import React from "react";
 import { usePage, router } from "@inertiajs/react";
 import { Tag } from "antd";
-import { ArrowRight, Clock } from "lucide-react";
+import { ArrowRight, Clock, Calendar } from "lucide-react";
 import AttachmentUpload from "./AttachmentUpload";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import ActionButton from "./ActionButton";
@@ -30,6 +30,10 @@ const ViewDetails = () => {
     if (!ticket) return <div>No ticket data found</div>;
     const isResubmitAllowed =
         ticket.STATUS === "Returned" && ticket.EMPLOYID === empData.emp_id;
+
+    // Check if ticket is Testing (5) or Parallel Run (6)
+    const isTestingOrParallelRun = [5, 6].includes(ticket.TYPE_OF_REQUEST);
+
     const goToParentTicket = () => {
         if (!ticket.PARENT_TICKET_ID) return;
         const hash = btoa(`${ticket.PARENT_TICKET_ID}:VIEWONLY`);
@@ -47,19 +51,46 @@ const ViewDetails = () => {
         "On Hold": "bg-yellow-500",
     };
 
+    const formatDate = (dateString) => {
+        if (!dateString) return "N/A";
+        const date = new Date(dateString);
+        return date.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+        });
+    };
+
     return (
         <AuthenticatedLayout>
             <div className="p-6 min-h-screen bg-base-200 flex justify-center">
                 <div className="relative max-w-4xl w-full card bg-base-100 rounded-2xl shadow-xl overflow-hidden border-t-4 border-base-content/10 transition-all duration-300">
-                    {/* Status Badge */}
-                    <div className="absolute top-4 right-4 z-10">
-                        <span
-                            className={`text-white font-bold px-4 py-2 rounded-full shadow-lg ${
-                                statusColorMap[statusTypes[ticket.STATUS]]
-                            }`}
-                        >
-                            {statusTypes[ticket.STATUS]}
-                        </span>
+                    {/* Status + Target Date Badge */}
+                    <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
+                        <div className="flex items-center gap-2">
+                            {/* Target Date (if Testing or Parallel Run) */}
+                            {isTestingOrParallelRun && ticket.TARGET_DATE && (
+                                <div className="flex items-center gap-1 bg-orange-500/10 border border-orange-500/20 px-3 py-1 rounded-full text-xs font-medium">
+                                    Target Date:
+                                    <Calendar
+                                        size={14}
+                                        className="text-orange-600"
+                                    />
+                                    <span className="text-orange-700">
+                                        {formatDate(ticket.TARGET_DATE)}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Status Badge */}
+                            <span
+                                className={`text-white font-bold px-4 py-2 rounded-full shadow-lg ${
+                                    statusColorMap[statusTypes[ticket.STATUS]]
+                                }`}
+                            >
+                                {statusTypes[ticket.STATUS]}
+                            </span>
+                        </div>
                     </div>
 
                     {/* Header */}
@@ -182,21 +213,24 @@ const ViewDetails = () => {
                             <p className="text-lg">{ticket.DETAILS}</p>
                         </div>
 
+                        {/* Tester Info with Target Date */}
                         {Array.isArray(testerInfo) && testerInfo.length > 0 && (
-                            <div>
-                                <p className="text-xs font-semibold text-base-content/60 mb-1">
-                                    Tester
-                                </p>
-                                <p className="text-lg">
-                                    {testerInfo.map((t, i) => (
-                                        <span key={i}>
-                                            {t.TESTER_NAME}
-                                            {i < testerInfo.length - 1 && (
-                                                <br />
-                                            )}
-                                        </span>
-                                    ))}
-                                </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold text-base-content/60 mb-1">
+                                        Tester
+                                    </p>
+                                    <p className="text-lg">
+                                        {testerInfo.map((t, i) => (
+                                            <span key={i}>
+                                                {t.TESTER_NAME}
+                                                {i < testerInfo.length - 1 && (
+                                                    <br />
+                                                )}
+                                            </span>
+                                        ))}
+                                    </p>
+                                </div>
                             </div>
                         )}
 

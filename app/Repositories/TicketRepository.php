@@ -656,4 +656,14 @@ class TicketRepository
             return false;
         }
     }
+    public function updateTargetDate($ticketDbId, $targetDate)
+    {
+        DB::table('tickets')
+            ->where('id', $ticketDbId)
+            ->update(['target_date' => $targetDate]);
+    }
+    public function getTicketByCode($ticketId)
+    {
+        return DB::table('ticketing')->where('TICKET_ID', $ticketId)->first();
+    }
 }

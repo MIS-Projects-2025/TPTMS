@@ -100,7 +100,10 @@ class TicketService
             $projectName,
             $initialStatus
         );
-
+        // Add this after inserting the ticket
+        if (!empty($validated['target_date'])) {
+            $this->ticketRepo->updateTargetDate($ticketDbId, $validated['target_date']);
+        }
         if (!empty($validated['testers'])) {
             $this->ticketRepo->insertTesters($ticketDbId, $validated['testers']);
         }
@@ -984,7 +987,10 @@ class TicketService
     // ========================
     // ROLE CHECKING
     // ========================
-
+    public function getTicketByCode($ticketId)
+    {
+        return $this->ticketRepo->getTicketById($ticketId);
+    }
     private function getUserRoles($empData): array
     {
         $roleChecks = [

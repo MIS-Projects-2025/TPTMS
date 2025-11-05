@@ -67,6 +67,7 @@ class TicketingController extends Controller
     }
     public function store(Request $request)
     {
+        // dd(($request->all()));
         $validated = $request->validate([
             'request_type' => 'required|integer|in:1,2,3,4,5,6',
             'project' => 'required_unless:request_type,1|nullable|string|max:255',
@@ -74,6 +75,7 @@ class TicketingController extends Controller
             'parent_ticket' => 'nullable|string|exists:tickets,TICKET_ID',
             'testers' => 'nullable|array',
             'testers.*' => 'string|max:20',
+            'target_date' => 'nullable|date_format:Y-m-d|after_or_equal:today', // Changed to date_format
             'details' => 'required|string|min:10',
             'attachments' => 'nullable|array|max:10',
             'attachments.*' => 'file|mimes:jpeg,jpg,png,gif,pdf,doc,docx,ppt,pptx|max:10240',

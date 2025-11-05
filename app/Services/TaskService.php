@@ -6,6 +6,7 @@ use App\Repositories\TaskRepository;
 use App\Constants\TaskConstants;
 use App\Constants\ProjectConstants;
 use Illuminate\Support\Facades\Log;
+use App\Constants\TicketConstants;
 
 class TaskService
 {
@@ -120,17 +121,35 @@ class TaskService
     /**
      * Format task for frontend
      */
+
     public function formatTask($task)
     {
         $statusMap = TaskConstants::getStatusMap();
         $sourceMap = TaskConstants::getSourceMap();
-
-        $projectName = null;
+        $sourceName = null;
 
         // ✅ If task is from a project, get the project name
         if (strtolower($task->SOURCE_TYPE) === 'project' && !empty($task->SOURCE_ID)) {
             $project = $this->projectService->getProjectById($task->SOURCE_ID);
-            $projectName = $project->PROJ_NAME ?? null;
+            $sourceName = $project->PROJ_NAME ?? null;
+        }
+
+        // ✅ If task is from a ticket, get TYPE_OF_REQUEST (mapped using TicketConstants)
+        if (strtolower($task->SOURCE_TYPE) === 'ticket' && !empty($task->SOURCE_ID)) {
+            $ticket = $this->ticketService->getTicketByCode($task->SOURCE_ID);
+
+            if ($ticket) {
+                $typeMap = [
+                    TicketConstants::REQUEST_NEW_SYSTEM     => 'New System',
+                    TicketConstants::REQUEST_MODIFICATION   => 'Modification',
+                    TicketConstants::REQUEST_ENHANCEMENT    => 'Enhancement',
+                    TicketConstants::REQUEST_ADJUSTMENT     => 'Adjustment',
+                    TicketConstants::REQUEST_TESTING        => 'Testing',
+                    TicketConstants::REQUEST_PARALLEL_RUN   => 'Parallel Run',
+                ];
+
+                $sourceName = $typeMap[$ticket->TYPE_OF_REQUEST] ?? 'Unknown Request Type';
+            }
         }
 
         return [
@@ -143,7 +162,7 @@ class TaskService
             'source_type' => $task->SOURCE_TYPE,
             'source_label' => $sourceMap[$task->SOURCE_TYPE] ?? 'Unknown',
             'source_id' => $task->SOURCE_ID,
-            'source_name' => $projectName, // ✅ Added project name if applicable
+            'source_name' => $sourceName, // ✅ Now shows TYPE_OF_REQUEST (human-readable)
             'priority' => $task->PRIORITY ?? 3,
             'created_by' => $task->CREATED_BY,
             'created_at' => $task->CREATED_AT,

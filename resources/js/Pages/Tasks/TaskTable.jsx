@@ -1,6 +1,7 @@
 import React from "react";
 import { Table, Button, Dropdown, Tag } from "antd";
 import { CheckCircleOutlined, MoreOutlined } from "@ant-design/icons";
+import { Ticket } from "lucide-react";
 
 const TaskTable = ({
     tasks,
@@ -30,32 +31,39 @@ const TaskTable = ({
             title: "Task ID",
             dataIndex: "id",
             key: "id",
-            width: 120,
+            width: 50,
             render: (id) => <strong>{id}</strong>,
         },
         {
             title: "Source Type",
             dataIndex: "source_type",
             key: "source_type",
-            width: 180,
-            render: (_, record) => (
-                <div>
-                    <strong>
-                        {record.source_type
-                            ? record.source_type
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, (char) =>
-                                      char.toUpperCase()
-                                  )
-                            : ""}
-                    </strong>
-                    {record.source_name && (
-                        <div className="text-sm text-gray-500">
-                            {record.source_name}
-                        </div>
-                    )}
-                </div>
-            ),
+            width: 100,
+            render: (_, record) => {
+                const formattedType = record.source_type
+                    ? record.source_type
+                          .toLowerCase()
+                          .replace(/\b\w/g, (char) => char.toUpperCase())
+                    : "";
+
+                return (
+                    <div>
+                        <strong>{formattedType}</strong>
+                        {record.source_name && (
+                            <div className="text-sm text-gray-500">
+                                {record.source_name}
+                            </div>
+                        )}
+                        {record.source_type?.toLowerCase() !== "project" &&
+                            record.source_id && (
+                                <div className="flex items-center gap-1 text-xs text-blue-800">
+                                    <Ticket color="blue" size={12} />{" "}
+                                    {record.source_id}
+                                </div>
+                            )}
+                    </div>
+                );
+            },
         },
 
         {
@@ -77,7 +85,7 @@ const TaskTable = ({
             title: "Status",
             dataIndex: "status",
             key: "status",
-            width: 130,
+            width: 50,
             render: (status, record) => (
                 <Tag color={getStatusColor(status)}>{record.status_label}</Tag>
             ),
@@ -86,7 +94,7 @@ const TaskTable = ({
             title: "Priority",
             dataIndex: "priority",
             key: "priority",
-            width: 100,
+            width: 50,
             render: (priority) => (
                 <Tag color={priorityColors[priority]}>
                     {priorityLabels[priority]}
@@ -97,12 +105,25 @@ const TaskTable = ({
             title: "Date",
             dataIndex: "date",
             key: "date",
-            width: 110,
+            width: 50,
+            render: (date) => {
+                if (!date) return "";
+                const formattedDate = new Date(date).toLocaleDateString(
+                    "en-US",
+                    {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                    }
+                );
+                return formattedDate;
+            },
         },
+
         {
             title: "Actions",
             key: "actions",
-            width: 100,
+            width: 80,
             fixed: "right",
             render: (_, record) => (
                 <div className="flex gap-2">

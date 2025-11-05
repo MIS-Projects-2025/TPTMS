@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Form, Select, Input, Button, Alert, message, Watermark } from "antd";
+import { Form, Select, Input, Button, Alert, message, DatePicker } from "antd";
 import { Ticket } from "lucide-react";
 import { useForm, usePage } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import AttachmentUpload from "./AttachmentUpload";
 import { useTicketForm } from "./../../Hooks/useTicketForm";
+import dayjs from "dayjs";
 
 const { Option } = Select;
 
@@ -56,6 +57,7 @@ const Create = () => {
         project_name: projectFromUrl || null,
         parent_ticket: parentFromUrl || null,
         testers: [],
+        target_date: null,
         details: "",
         attachments: [],
     });
@@ -83,6 +85,11 @@ const Create = () => {
     console.log("Is Child Ticket:", isChildTicket);
     console.log("userLog", emp_data.emp_id);
 
+    // Disable past dates in DatePicker
+    const disabledDate = (current) => {
+        return current && current < dayjs().startOf("day");
+    };
+
     const handleSubmit = (e) => {
         const formData = new FormData();
 
@@ -106,13 +113,26 @@ const Create = () => {
             });
         }
 
+        // Add target date - handle both string and dayjs object
+        if (isTesting && data.target_date) {
+            const dateStr =
+                typeof data.target_date === "string"
+                    ? data.target_date
+                    : dayjs(data.target_date).format("YYYY-MM-DD");
+            formData.append("target_date", dateStr);
+        }
+
         formData.append("details", data.details);
 
-        data.attachments.forEach((file, index) => {
-            if (file instanceof File) {
+        // Only append valid file attachments
+        if (data.attachments && Array.isArray(data.attachments)) {
+            const validFiles = data.attachments.filter(
+                (file) => file instanceof File
+            );
+            validFiles.forEach((file, index) => {
                 formData.append(`attachments[${index}]`, file);
-            }
-        });
+            });
+        }
 
         post(route("tickets.store"), {
             data: formData,
@@ -374,41 +394,76 @@ const Create = () => {
                                 )}
                             </div>
 
-                            {/* Assign Tester */}
+                            {/* Assign Tester and Target Date */}
                             {isTesting && (
-                                <Form.Item
-                                    label="Assign Tester"
-                                    validateStatus={
-                                        errors.testers ? "error" : ""
-                                    }
-                                    help={errors.testers}
-                                >
-                                    <Select
-                                        mode="multiple"
-                                        placeholder="Select tester(s)"
-                                        value={data.testers}
-                                        onChange={(value) =>
-                                            setData("testers", value)
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <Form.Item
+                                        label="Assign Tester"
+                                        required
+                                        validateStatus={
+                                            errors.testers ? "error" : ""
                                         }
-                                        className="w-full rounded-lg text-sm h-10"
-                                        showSearch
-                                        optionFilterProp="children"
+                                        help={errors.testers}
                                     >
-                                        {employeeOptions.map((emp) => (
-                                            <Option
-                                                key={emp.value}
-                                                value={emp.value}
-                                            >
-                                                {emp.label}
-                                            </Option>
-                                        ))}
-                                    </Select>
-                                </Form.Item>
+                                        <Select
+                                            mode="multiple"
+                                            placeholder="Select tester(s)"
+                                            value={data.testers}
+                                            onChange={(value) =>
+                                                setData("testers", value)
+                                            }
+                                            className="w-full rounded-lg text-sm h-10"
+                                            showSearch
+                                            optionFilterProp="children"
+                                        >
+                                            {employeeOptions.map((emp) => (
+                                                <Option
+                                                    key={emp.value}
+                                                    value={emp.value}
+                                                >
+                                                    {emp.label}
+                                                </Option>
+                                            ))}
+                                        </Select>
+                                    </Form.Item>
+
+                                    <Form.Item
+                                        label="Target Date"
+                                        required
+                                        validateStatus={
+                                            errors.target_date ? "error" : ""
+                                        }
+                                        help={errors.target_date}
+                                    >
+                                        <DatePicker
+                                            placeholder="Select target date"
+                                            value={
+                                                data.target_date
+                                                    ? dayjs(data.target_date)
+                                                    : null
+                                            }
+                                            onChange={(date) => {
+                                                // Convert dayjs object to string format immediately
+                                                const formattedDate = date
+                                                    ? date.format("YYYY-MM-DD")
+                                                    : null;
+                                                setData(
+                                                    "target_date",
+                                                    formattedDate
+                                                );
+                                            }}
+                                            disabledDate={disabledDate}
+                                            className="w-full rounded-lg text-sm h-10"
+                                            format="YYYY-MM-DD"
+                                        />
+                                    </Form.Item>
+                                </div>
                             )}
 
                             {/* Request Details */}
                             <Form.Item
                                 label="Request Details"
+                                required
                                 validateStatus={errors.details ? "error" : ""}
                                 help={errors.details}
                             >
