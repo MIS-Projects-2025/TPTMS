@@ -147,6 +147,33 @@ class TicketingController extends Controller
             'filters' => $result['filters'],
         ])->with('flash', ['message' => 'Tickets loaded successfully']);
     }
+    public function getTicketsCount(Request $request)
+    {
+        $empData = session('emp_data');
+        if (!$empData) {
+            return response()->json(['count' => 0]);
+        }
+
+        $userRoles = $this->getUserAccountType($empData);
+
+        // We’ll reuse the same filter logic, but keep it minimal
+        $filters = [
+            'page' => 1,
+            'pageSize' => 1, // doesn’t matter for count
+            'search' => trim($request->input('search', '')),
+            'sortField' => 'created_at',
+            'sortOrder' => 'desc',
+            'status' => $request->input('status', 'all'),
+            'project' => $request->input('project', ''),
+        ];
+
+        // Reuse the service (the same one used by getTicketsDataTable)
+        $result = $this->ticketService->getTicketsDataTable($filters, $empData, $userRoles);
+
+        return response()->json([
+            'count' => $result['pagination']['total'] ?? 0,
+        ]);
+    }
 
     public function getAssignedTickets($empId)
     {

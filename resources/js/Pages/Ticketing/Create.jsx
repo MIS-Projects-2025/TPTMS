@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { Form, Select, Input, Button, Alert, message, DatePicker } from "antd";
-import { Ticket } from "lucide-react";
+import { Ticket, HelpCircle } from "lucide-react";
 import { useForm, usePage } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import AttachmentUpload from "./AttachmentUpload";
+import TicketFormTour from "./TicketFormTour";
 import { useTicketForm } from "./../../Hooks/useTicketForm";
 import dayjs from "dayjs";
 
@@ -11,6 +12,19 @@ const { Option } = Select;
 
 const Create = () => {
     const selectDropdownStyle = { borderRadius: "0.5rem" };
+
+    // Tour state
+    const [tourOpen, setTourOpen] = useState(false);
+
+    // Refs for tour targets
+    const requestTypeRef = useRef(null);
+    const projectRef = useRef(null);
+    const parentTicketRef = useRef(null);
+    const testerRef = useRef(null);
+    const targetDateRef = useRef(null);
+    const detailsRef = useRef(null);
+    const attachmentsRef = useRef(null);
+    const submitRef = useRef(null);
 
     const {
         emp_data,
@@ -20,37 +34,21 @@ const Create = () => {
         projectOptions = [],
         employeeOptions = [],
     } = usePage().props;
-    console.log(usePage().props);
-    // ✅ Parse URL query parameters
-    const params = new URLSearchParams(window.location.search);
 
-    // Extract raw Base64 values
+    // Parse URL query parameters
+    const params = new URLSearchParams(window.location.search);
     const parentParam = params.get("parent");
     const projectParam = params.get("project");
     const userParam = params.get("user");
     const actionParam = params.get("action");
-    // Decode safely (only once)
+
     const parentFromUrl = parentParam ? atob(parentParam) : null;
     const projectFromUrl = projectParam ? atob(projectParam) : null;
     const userFromUrl = userParam ? atob(userParam) : null;
     const isNewTicketFromProj = Boolean(projectParam && !parentParam);
     const isNewProj = Boolean(actionParam);
-    console.log(isNewProj);
 
-    console.log(
-        isNewTicketFromProj
-            ? "New Ticket from Project URL detected"
-            : "Not a New Ticket from Project URL"
-    );
-
-    console.log("URL params:", Object.fromEntries(params.entries()));
-    console.log("Decoded Parent:", parentFromUrl);
-    console.log("Decoded Project:", projectFromUrl);
-    console.log("Decoded User:", userFromUrl);
-
-    console.log("isNewTicketFromProj", isNewTicketFromProj);
-
-    // ✅ Initialize form data
+    // Initialize form data
     const { data, setData, post, processing, errors, reset } = useForm({
         request_type: isNewProj ? 1 : null,
         project: projectFromUrl || null,
@@ -80,10 +78,7 @@ const Create = () => {
         onParentTicketChange: (value) => setData("parent_ticket", value),
     });
 
-    // If URL provides parent/project, lock them in place
     const isChildTicket = Boolean(parentFromUrl && projectFromUrl);
-    console.log("Is Child Ticket:", isChildTicket);
-    console.log("userLog", emp_data.emp_id);
 
     // Disable past dates in DatePicker
     const disabledDate = (current) => {
@@ -113,7 +108,6 @@ const Create = () => {
             });
         }
 
-        // Add target date - handle both string and dayjs object
         if (isTesting && data.target_date) {
             const dateStr =
                 typeof data.target_date === "string"
@@ -124,7 +118,6 @@ const Create = () => {
 
         formData.append("details", data.details);
 
-        // Only append valid file attachments
         if (data.attachments && Array.isArray(data.attachments)) {
             const validFiles = data.attachments.filter(
                 (file) => file instanceof File
@@ -150,7 +143,16 @@ const Create = () => {
     return (
         <AuthenticatedLayout>
             <div className="text-center px-6 mb-6">
-                <h1 className="text-3xl font-bold mb-1">Ticketing System</h1>
+                <div className="flex items-center justify-center gap-3 mb-1">
+                    <h1 className="text-3xl font-bold">Ticketing System</h1>
+                    <Button
+                        type="text"
+                        icon={<HelpCircle size={20} />}
+                        onClick={() => setTourOpen(true)}
+                        className="flex items-center"
+                        title="Start guided tour"
+                    />
+                </div>
                 <p className="text-base-content/60 text-sm">
                     Generate a new ticket by filling out the form below.
                 </p>
@@ -208,66 +210,64 @@ const Create = () => {
                                     }
                                     help={errors.request_type}
                                 >
-                                    <Select
-                                        placeholder="Choose request type"
-                                        value={data.request_type}
-                                        onChange={(value) => {
-                                            setData("request_type", value);
-                                            handleRequestTypeChange(value);
-                                        }}
-                                        className="w-full rounded-lg text-sm h-10"
-                                        showSearch
-                                        optionFilterProp="children"
-                                        disabled={isNewProj}
-                                    >
-                                        {requestTypes
-                                            .filter((rt) => {
-                                                // 🔹 New ticket from project → hide type 1
-                                                if (isNewTicketFromProj)
-                                                    return rt.value !== 1;
-                                                if (isNewProj)
-                                                    return rt.value === 1;
-                                                // 🔹 Child ticket
-                                                if (isChildTicket) {
-                                                    // Child ticket + user not the same → show only 5 and 6
-                                                    if (
-                                                        userFromUrl !=
-                                                        emp_data.emp_id
-                                                    )
-                                                        return [5, 6].includes(
-                                                            rt.value
-                                                        );
-
-                                                    // Child ticket + user same → hide 1, 5, 6
-                                                    return ![1, 5, 6].includes(
-                                                        rt.value
-                                                    );
-                                                }
-
-                                                // 🔹 Regular ticket → show all
-                                                return true;
-                                            })
-                                            .map((rt) => (
-                                                <Option
-                                                    key={rt.value}
-                                                    value={rt.value}
-                                                >
-                                                    {rt.label}
-                                                </Option>
-                                            ))}
-                                    </Select>
+                                    <div ref={requestTypeRef}>
+                                        <Select
+                                            placeholder="Choose request type"
+                                            value={data.request_type}
+                                            onChange={(value) => {
+                                                setData("request_type", value);
+                                                handleRequestTypeChange(value);
+                                            }}
+                                            className="w-full rounded-lg text-sm h-10"
+                                            showSearch
+                                            optionFilterProp="children"
+                                            disabled={isNewProj}
+                                        >
+                                            {requestTypes
+                                                .filter((rt) => {
+                                                    if (isNewTicketFromProj)
+                                                        return rt.value !== 1;
+                                                    if (isNewProj)
+                                                        return rt.value === 1;
+                                                    if (isChildTicket) {
+                                                        if (
+                                                            userFromUrl !=
+                                                            emp_data.emp_id
+                                                        )
+                                                            return [
+                                                                5, 6,
+                                                            ].includes(
+                                                                rt.value
+                                                            );
+                                                        return ![
+                                                            1, 5, 6,
+                                                        ].includes(rt.value);
+                                                    }
+                                                    return true;
+                                                })
+                                                .map((rt) => (
+                                                    <Option
+                                                        key={rt.value}
+                                                        value={rt.value}
+                                                    >
+                                                        {rt.label}
+                                                    </Option>
+                                                ))}
+                                        </Select>
+                                    </div>
                                 </Form.Item>
 
                                 {/* Project & Parent Ticket */}
                                 {isChildTicket ? (
                                     <>
-                                        {/* Child Ticket → show both project and parent ticket (readonly) */}
                                         <Form.Item label="Project" required>
-                                            <Input
-                                                value={projectFromUrl}
-                                                readOnly
-                                                className="input input-bordered w-full rounded-lg text-sm h-10 bg-base-300"
-                                            />
+                                            <div ref={projectRef}>
+                                                <Input
+                                                    value={projectFromUrl}
+                                                    readOnly
+                                                    className="input input-bordered w-full rounded-lg text-sm h-10 bg-base-300"
+                                                />
+                                            </div>
                                         </Form.Item>
 
                                         <Form.Item
@@ -283,18 +283,18 @@ const Create = () => {
                                     </>
                                 ) : isNewTicketFromProj ? (
                                     <>
-                                        {/* New Ticket from Project → show only project (readonly) */}
                                         <Form.Item label="Project" required>
-                                            <Input
-                                                value={projectFromUrl}
-                                                readOnly
-                                                className="input input-bordered w-full rounded-lg text-sm h-10 bg-base-300"
-                                            />
+                                            <div ref={projectRef}>
+                                                <Input
+                                                    value={projectFromUrl}
+                                                    readOnly
+                                                    className="input input-bordered w-full rounded-lg text-sm h-10 bg-base-300"
+                                                />
+                                            </div>
                                         </Form.Item>
                                     </>
                                 ) : isNewSystem ? (
                                     <>
-                                        {/* New System → show Project Name input */}
                                         <Form.Item
                                             label="Project Name"
                                             required
@@ -306,22 +306,23 @@ const Create = () => {
                                             }
                                             help={errors.project_name}
                                         >
-                                            <Input
-                                                placeholder="Enter project name"
-                                                value={data.project_name}
-                                                onChange={(e) =>
-                                                    setData(
-                                                        "project_name",
-                                                        e.target.value
-                                                    )
-                                                }
-                                                className="input input-bordered w-full rounded-lg text-sm h-10"
-                                            />
+                                            <div ref={projectRef}>
+                                                <Input
+                                                    placeholder="Enter project name"
+                                                    value={data.project_name}
+                                                    onChange={(e) =>
+                                                        setData(
+                                                            "project_name",
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                    className="input input-bordered w-full rounded-lg text-sm h-10"
+                                                />
+                                            </div>
                                         </Form.Item>
                                     </>
                                 ) : (
                                     <>
-                                        {/* Regular Ticket → show project and optional parent ticket */}
                                         <Form.Item
                                             label="Project"
                                             required
@@ -330,26 +331,33 @@ const Create = () => {
                                             }
                                             help={errors.project}
                                         >
-                                            <Select
-                                                placeholder="Select project"
-                                                value={data.project}
-                                                onChange={(value) => {
-                                                    setData("project", value);
-                                                    handleProjectChange(value);
-                                                }}
-                                                showSearch
-                                                optionFilterProp="children"
-                                                className="w-full rounded-lg text-sm h-10"
-                                            >
-                                                {projectOptions.map((p) => (
-                                                    <Option
-                                                        key={p.value}
-                                                        value={p.value}
-                                                    >
-                                                        {p.label}
-                                                    </Option>
-                                                ))}
-                                            </Select>
+                                            <div ref={projectRef}>
+                                                <Select
+                                                    placeholder="Select project"
+                                                    value={data.project}
+                                                    onChange={(value) => {
+                                                        setData(
+                                                            "project",
+                                                            value
+                                                        );
+                                                        handleProjectChange(
+                                                            value
+                                                        );
+                                                    }}
+                                                    showSearch
+                                                    optionFilterProp="children"
+                                                    className="w-full rounded-lg text-sm h-10"
+                                                >
+                                                    {projectOptions.map((p) => (
+                                                        <Option
+                                                            key={p.value}
+                                                            value={p.value}
+                                                        >
+                                                            {p.label}
+                                                        </Option>
+                                                    ))}
+                                                </Select>
+                                            </div>
                                         </Form.Item>
 
                                         <Form.Item
@@ -361,34 +369,36 @@ const Create = () => {
                                             }
                                             help={errors.parent_ticket}
                                         >
-                                            <Select
-                                                placeholder="Select parent ticket"
-                                                value={data.parent_ticket}
-                                                onChange={(value) => {
-                                                    setData(
-                                                        "parent_ticket",
-                                                        value
-                                                    );
-                                                    handleParentTicketChange(
-                                                        value
-                                                    );
-                                                }}
-                                                allowClear
-                                                showSearch
-                                                optionFilterProp="children"
-                                                className="w-full rounded-lg text-sm h-10"
-                                            >
-                                                {filteredParentTickets.map(
-                                                    (t) => (
-                                                        <Option
-                                                            key={t.value}
-                                                            value={t.value}
-                                                        >
-                                                            {t.label}
-                                                        </Option>
-                                                    )
-                                                )}
-                                            </Select>
+                                            <div ref={parentTicketRef}>
+                                                <Select
+                                                    placeholder="Select parent ticket"
+                                                    value={data.parent_ticket}
+                                                    onChange={(value) => {
+                                                        setData(
+                                                            "parent_ticket",
+                                                            value
+                                                        );
+                                                        handleParentTicketChange(
+                                                            value
+                                                        );
+                                                    }}
+                                                    allowClear
+                                                    showSearch
+                                                    optionFilterProp="children"
+                                                    className="w-full rounded-lg text-sm h-10"
+                                                >
+                                                    {filteredParentTickets.map(
+                                                        (t) => (
+                                                            <Option
+                                                                key={t.value}
+                                                                value={t.value}
+                                                            >
+                                                                {t.label}
+                                                            </Option>
+                                                        )
+                                                    )}
+                                                </Select>
+                                            </div>
                                         </Form.Item>
                                     </>
                                 )}
@@ -405,26 +415,28 @@ const Create = () => {
                                         }
                                         help={errors.testers}
                                     >
-                                        <Select
-                                            mode="multiple"
-                                            placeholder="Select tester(s)"
-                                            value={data.testers}
-                                            onChange={(value) =>
-                                                setData("testers", value)
-                                            }
-                                            className="w-full rounded-lg text-sm h-10"
-                                            showSearch
-                                            optionFilterProp="children"
-                                        >
-                                            {employeeOptions.map((emp) => (
-                                                <Option
-                                                    key={emp.value}
-                                                    value={emp.value}
-                                                >
-                                                    {emp.label}
-                                                </Option>
-                                            ))}
-                                        </Select>
+                                        <div ref={testerRef}>
+                                            <Select
+                                                mode="multiple"
+                                                placeholder="Select tester(s)"
+                                                value={data.testers}
+                                                onChange={(value) =>
+                                                    setData("testers", value)
+                                                }
+                                                className="w-full rounded-lg text-sm h-10"
+                                                showSearch
+                                                optionFilterProp="children"
+                                            >
+                                                {employeeOptions.map((emp) => (
+                                                    <Option
+                                                        key={emp.value}
+                                                        value={emp.value}
+                                                    >
+                                                        {emp.label}
+                                                    </Option>
+                                                ))}
+                                            </Select>
+                                        </div>
                                     </Form.Item>
 
                                     <Form.Item
@@ -435,27 +447,32 @@ const Create = () => {
                                         }
                                         help={errors.target_date}
                                     >
-                                        <DatePicker
-                                            placeholder="Select target date"
-                                            value={
-                                                data.target_date
-                                                    ? dayjs(data.target_date)
-                                                    : null
-                                            }
-                                            onChange={(date) => {
-                                                // Convert dayjs object to string format immediately
-                                                const formattedDate = date
-                                                    ? date.format("YYYY-MM-DD")
-                                                    : null;
-                                                setData(
-                                                    "target_date",
-                                                    formattedDate
-                                                );
-                                            }}
-                                            disabledDate={disabledDate}
-                                            className="w-full rounded-lg text-sm h-10"
-                                            format="YYYY-MM-DD"
-                                        />
+                                        <div ref={targetDateRef}>
+                                            <DatePicker
+                                                placeholder="Select target date"
+                                                value={
+                                                    data.target_date
+                                                        ? dayjs(
+                                                              data.target_date
+                                                          )
+                                                        : null
+                                                }
+                                                onChange={(date) => {
+                                                    const formattedDate = date
+                                                        ? date.format(
+                                                              "YYYY-MM-DD"
+                                                          )
+                                                        : null;
+                                                    setData(
+                                                        "target_date",
+                                                        formattedDate
+                                                    );
+                                                }}
+                                                disabledDate={disabledDate}
+                                                className="w-full rounded-lg text-sm h-10"
+                                                format="YYYY-MM-DD"
+                                            />
+                                        </div>
                                     </Form.Item>
                                 </div>
                             )}
@@ -467,15 +484,17 @@ const Create = () => {
                                 validateStatus={errors.details ? "error" : ""}
                                 help={errors.details}
                             >
-                                <textarea
-                                    placeholder="Provide detailed information about your request..."
-                                    rows={4}
-                                    value={data.details}
-                                    onChange={(e) =>
-                                        setData("details", e.target.value)
-                                    }
-                                    className="textarea textarea-bordered w-full rounded-lg text-sm resize-y"
-                                />
+                                <div ref={detailsRef}>
+                                    <textarea
+                                        placeholder="Provide detailed information about your request..."
+                                        rows={4}
+                                        value={data.details}
+                                        onChange={(e) =>
+                                            setData("details", e.target.value)
+                                        }
+                                        className="textarea textarea-bordered w-full rounded-lg text-sm resize-y"
+                                    />
+                                </div>
                             </Form.Item>
 
                             {/* Attachments */}
@@ -486,37 +505,60 @@ const Create = () => {
                                 }
                                 help={errors.attachments}
                             >
-                                <AttachmentUpload
-                                    onFilesChange={(files) =>
-                                        setData("attachments", files)
-                                    }
-                                />
+                                <div ref={attachmentsRef}>
+                                    <AttachmentUpload
+                                        onFilesChange={(files) =>
+                                            setData("attachments", files)
+                                        }
+                                    />
+                                </div>
                             </Form.Item>
 
                             {/* Submit */}
                             <Form.Item className="mb-0">
-                                <Button
-                                    type="primary"
-                                    htmlType="submit"
-                                    loading={processing}
-                                    disabled={processing}
-                                    className="btn btn-primary w-full rounded-lg flex items-center justify-center gap-2"
-                                    size="large"
-                                >
-                                    {!processing && <Ticket />}
-                                    {processing
-                                        ? isChildTicket
-                                            ? "Creating Child Ticket..."
-                                            : "Creating..."
-                                        : isChildTicket
-                                        ? "Create Child Ticket"
-                                        : "Create Ticket"}
-                                </Button>
+                                <div ref={submitRef}>
+                                    <Button
+                                        type="primary"
+                                        htmlType="submit"
+                                        loading={processing}
+                                        disabled={processing}
+                                        className="btn btn-primary w-full rounded-lg flex items-center justify-center gap-2"
+                                        size="large"
+                                    >
+                                        {!processing && <Ticket />}
+                                        {processing
+                                            ? isChildTicket
+                                                ? "Creating Child Ticket..."
+                                                : "Creating..."
+                                            : isChildTicket
+                                            ? "Create Child Ticket"
+                                            : "Create Ticket"}
+                                    </Button>
+                                </div>
                             </Form.Item>
                         </Form>
                     </div>
                 </div>
             </div>
+
+            {/* Tour Component */}
+            <TicketFormTour
+                open={tourOpen}
+                onClose={() => setTourOpen(false)}
+                refs={{
+                    requestTypeRef,
+                    projectRef,
+                    parentTicketRef,
+                    testerRef,
+                    targetDateRef,
+                    detailsRef,
+                    attachmentsRef,
+                    submitRef,
+                }}
+                isChildTicket={isChildTicket}
+                isNewSystem={isNewSystem}
+                isTesting={isTesting}
+            />
         </AuthenticatedLayout>
     );
 };

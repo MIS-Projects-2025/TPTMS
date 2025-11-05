@@ -14,7 +14,7 @@ export default function useTask(tasks) {
     // FILTER STATES
     // ========================================
     const [selectedDates, setSelectedDates] = useState(null);
-    const [selectedStatus, setSelectedStatus] = useState(null); // Changed from 1 to null (show all by default)
+    const [selectedStatus, setSelectedStatus] = useState(1); // Changed from 1 to null (show all by default)
     const [searchTerm, setSearchTerm] = useState("");
     const [sortKey, setSortKey] = useState(null);
 

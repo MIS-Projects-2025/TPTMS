@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import axios from "axios";
 import Dropdown from "@/Components/sidebar/Dropdown";
 import SidebarLink from "@/Components/sidebar/SidebarLink";
 import { usePage } from "@inertiajs/react";
@@ -8,11 +10,19 @@ import {
     FolderKanban,
     ListTodo,
 } from "lucide-react";
+import { Avatar, Badge } from "antd";
 
 export default function NavLinks({ isSidebarOpen }) {
     const { emp_data } = usePage().props;
+    const [ticketCount, setTicketCount] = useState(0);
 
-    // Define ticket dropdown links
+    useEffect(() => {
+        axios
+            .get(route("tickets.count"))
+            .then((res) => setTicketCount(res.data.count))
+            .catch(() => setTicketCount(0));
+    }, []);
+
     const ticketLinks = [
         {
             href: route("tickets"),
@@ -21,7 +31,16 @@ export default function NavLinks({ isSidebarOpen }) {
         },
         {
             href: route("tickets.datatable"),
-            label: "Ticket List",
+            label: (
+                <div className="flex items-center justify-between w-full">
+                    <span>Ticket List</span>
+                    {ticketCount > 0 && (
+                        <span className="ml-2 bg-blue-600 text-white text-xs font-semibold px-2 py-0.5 rounded-full">
+                            {ticketCount}
+                        </span>
+                    )}
+                </div>
+            ),
             icon: <Ticket className="w-4 h-4" />,
         },
     ];
@@ -38,61 +57,32 @@ export default function NavLinks({ isSidebarOpen }) {
                 isSidebarOpen={isSidebarOpen}
             />
 
-            {/* Tickets Dropdown */}
             <Dropdown
-                label="Tickets"
+                label={
+                    <span className="flex items-center justify-between w-full">
+                        <span>Tickets</span>
+                        {ticketCount > 0 && (
+                            <Badge dot={ticketCount > 0} className="ml-2" />
+                        )}
+                    </span>
+                }
                 icon={<Ticket className="w-5 h-5" />}
                 links={ticketLinks}
                 isSidebarOpen={isSidebarOpen}
             />
+
             <SidebarLink
                 href={route("project.list")}
                 label="Projects"
                 icon={<FolderKanban className="w-5 h-5" />}
                 isSidebarOpen={isSidebarOpen}
             />
-            {emp_data.emp_system_role == "Programmer" && (
+
+            {emp_data.emp_system_role === "Programmer" && (
                 <SidebarLink
                     href={route("tasks")}
                     label="Tasks"
                     icon={<ListTodo className="w-5 h-5" />}
-                    isSidebarOpen={isSidebarOpen}
-                />
-            )}
-
-            {/* Admin section */}
-            {["superadmin", "admin"].includes(emp_data?.emp_system_role) && (
-                <SidebarLink
-                    href={route("admin")}
-                    label="Administrators"
-                    icon={
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            strokeWidth="1.5"
-                            stroke="currentColor"
-                            className="w-5 h-5"
-                        >
-                            {/* User head and body */}
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
-                            />
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M4.5 20.25v-1.5A4.5 4.5 0 019 14.25h2.25"
-                            />
-                            {/* Shield */}
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M17.25 14.25l2.25.75v2.25c0 2.25-2.25 3-2.25 3s-2.25-.75-2.25-3v-2.25l2.25-.75z"
-                            />
-                        </svg>
-                    }
                     isSidebarOpen={isSidebarOpen}
                 />
             )}
