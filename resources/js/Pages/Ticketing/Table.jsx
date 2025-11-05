@@ -25,7 +25,7 @@ import { usePage, router } from "@inertiajs/react";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import StatCard from "./StatCard";
 import { useNotifications } from "@/Context/NotificationContext";
-
+import TicketFormSkeleton from "./TicketFormSkeleton";
 export default function TicketTable() {
     const { tickets, pagination, projects, statusCounts, filters } =
         usePage().props;
@@ -35,6 +35,16 @@ export default function TicketTable() {
     const { markAsRead, markAllAsRead, notifications, unreadCount } =
         useNotifications();
     const prevNotificationCountRef = useRef(unreadCount);
+    const [isLoading, setIsLoading] = useState(true);
+    // Simulate data loading effect
+    useEffect(() => {
+        // Simulate loading delay for data initialization
+        const timer = setTimeout(() => {
+            setIsLoading(false);
+        }, 800);
+
+        return () => clearTimeout(timer);
+    }, []);
 
     // Function to refresh tickets from server
     const refreshTickets = () => {
@@ -435,120 +445,129 @@ export default function TicketTable() {
 
     return (
         <AuthenticatedLayout>
-            {/* Stat Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                <StatCard
-                    title="All Tickets"
-                    value={statusCounts?.all || 0}
-                    color="primary"
-                    icon={AppstoreOutlined}
-                    onClick={() => handleStatusFilter("all")}
-                    isActive={activeFilter === "all"}
-                    filterType="all"
-                />
-                <StatCard
-                    title="Active"
-                    value={statusCounts?.active || 0}
-                    color="info"
-                    icon={ThunderboltOutlined}
-                    onClick={() => handleStatusFilter("active")}
-                    isActive={activeFilter === "active"}
-                    filterType="active"
-                />
-                <StatCard
-                    title="Urgent"
-                    value={statusCounts?.urgent || 0}
-                    color="error"
-                    icon={ExclamationCircleOutlined}
-                    onClick={() => handleStatusFilter("urgent")}
-                    isActive={activeFilter === "urgent"}
-                    filterType="urgent"
-                />
-                <StatCard
-                    title="In Progress"
-                    value={statusCounts?.in_progress || 0}
-                    color="warning"
-                    icon={ToolOutlined}
-                    onClick={() => handleStatusFilter("in_progress")}
-                    isActive={activeFilter === "in_progress"}
-                    filterType="in_progress"
-                />
-                <StatCard
-                    title="Closed"
-                    value={statusCounts?.closed || 0}
-                    color="success"
-                    icon={CheckCircleOutlined}
-                    onClick={() => handleStatusFilter("closed")}
-                    isActive={activeFilter === "closed"}
-                    filterType="closed"
-                />
-            </div>
-
-            <div className="p-6 bg-base-200 min-h-screen transition-all duration-300 border border-base-300 rounded-xl shadow-sm">
-                {/* Filters */}
-                <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
-                    <div className="flex items-center gap-2">
-                        <Search className="w-4 h-4 text-base-content/70" />
-                        <input
-                            type="text"
-                            placeholder="Search tickets..."
-                            value={searchValue}
-                            onChange={(e) => handleSearch(e.target.value)}
-                            className="input input-bordered input-sm w-64"
+            {isLoading ? (
+                <TicketFormSkeleton />
+            ) : (
+                <>
+                    {/* Stat Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                        <StatCard
+                            title="All Tickets"
+                            value={statusCounts?.all || 0}
+                            color="primary"
+                            icon={AppstoreOutlined}
+                            onClick={() => handleStatusFilter("all")}
+                            isActive={activeFilter === "all"}
+                            filterType="all"
+                        />
+                        <StatCard
+                            title="Active"
+                            value={statusCounts?.active || 0}
+                            color="info"
+                            icon={ThunderboltOutlined}
+                            onClick={() => handleStatusFilter("active")}
+                            isActive={activeFilter === "active"}
+                            filterType="active"
+                        />
+                        <StatCard
+                            title="Urgent"
+                            value={statusCounts?.urgent || 0}
+                            color="error"
+                            icon={ExclamationCircleOutlined}
+                            onClick={() => handleStatusFilter("urgent")}
+                            isActive={activeFilter === "urgent"}
+                            filterType="urgent"
+                        />
+                        <StatCard
+                            title="In Progress"
+                            value={statusCounts?.in_progress || 0}
+                            color="warning"
+                            icon={ToolOutlined}
+                            onClick={() => handleStatusFilter("in_progress")}
+                            isActive={activeFilter === "in_progress"}
+                            filterType="in_progress"
+                        />
+                        <StatCard
+                            title="Closed"
+                            value={statusCounts?.closed || 0}
+                            color="success"
+                            icon={CheckCircleOutlined}
+                            onClick={() => handleStatusFilter("closed")}
+                            isActive={activeFilter === "closed"}
+                            filterType="closed"
                         />
                     </div>
 
-                    <Space wrap>
-                        <Select
-                            placeholder="Filter by Project"
-                            allowClear
-                            style={{ width: 180 }}
-                            onChange={handleProjectChange}
-                            value={filters?.project || undefined}
-                        >
-                            {projects?.map((p) => (
-                                <Select.Option key={p} value={p}>
-                                    {p}
-                                </Select.Option>
-                            ))}
-                        </Select>
+                    {/* Table Container */}
+                    <div className="p-6 bg-base-200 min-h-screen transition-all duration-300 border border-base-300 rounded-xl shadow-sm">
+                        {/* Filters */}
+                        <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
+                            <div className="flex items-center gap-2">
+                                <Search className="w-4 h-4 text-base-content/70" />
+                                <input
+                                    type="text"
+                                    placeholder="Search tickets..."
+                                    value={searchValue}
+                                    onChange={(e) =>
+                                        handleSearch(e.target.value)
+                                    }
+                                    className="input input-bordered input-sm w-64"
+                                />
+                            </div>
 
-                        <button className="btn btn-outline btn-sm flex items-center gap-2">
-                            <Filter className="w-4 h-4" />
-                            Filters
-                        </button>
-                    </Space>
-                </div>
+                            <Space wrap>
+                                <Select
+                                    placeholder="Filter by Project"
+                                    allowClear
+                                    style={{ width: 180 }}
+                                    onChange={handleProjectChange}
+                                    value={filters?.project || undefined}
+                                >
+                                    {projects?.map((p) => (
+                                        <Select.Option key={p} value={p}>
+                                            {p}
+                                        </Select.Option>
+                                    ))}
+                                </Select>
 
-                {/* Table */}
-                <Spin spinning={loading}>
-                    {tickets && tickets.length > 0 ? (
-                        <Table
-                            columns={columns}
-                            dataSource={tickets}
-                            rowKey={(record) => record.ticket_id}
-                            pagination={{
-                                current: pagination?.current_page || 1,
-                                pageSize: pagination?.per_page || 10,
-                                total: pagination?.total || 0,
-                                showSizeChanger: true,
-                                showQuickJumper: true,
-                                pageSizeOptions: ["10", "20", "50"],
-                            }}
-                            onChange={handleTableChange}
-                            bordered
-                            size="middle"
-                            scroll={{ x: 1200 }}
-                            className="bg-base-100 rounded-xl shadow-md"
-                            loading={loading}
-                        />
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl shadow-md">
-                            <Empty description="No tickets found" />
+                                <button className="btn btn-outline btn-sm flex items-center gap-2">
+                                    <Filter className="w-4 h-4" />
+                                    Filters
+                                </button>
+                            </Space>
                         </div>
-                    )}
-                </Spin>
-            </div>
+
+                        {/* Table */}
+                        <Spin spinning={loading}>
+                            {tickets && tickets.length > 0 ? (
+                                <Table
+                                    columns={columns}
+                                    dataSource={tickets}
+                                    rowKey={(record) => record.ticket_id}
+                                    pagination={{
+                                        current: pagination?.current_page || 1,
+                                        pageSize: pagination?.per_page || 10,
+                                        total: pagination?.total || 0,
+                                        showSizeChanger: true,
+                                        showQuickJumper: true,
+                                        pageSizeOptions: ["10", "20", "50"],
+                                    }}
+                                    onChange={handleTableChange}
+                                    bordered
+                                    size="middle"
+                                    scroll={{ x: 1200 }}
+                                    className="bg-base-100 rounded-xl shadow-md"
+                                    loading={loading}
+                                />
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl shadow-md">
+                                    <Empty description="No tickets found" />
+                                </div>
+                            )}
+                        </Spin>
+                    </div>
+                </>
+            )}
         </AuthenticatedLayout>
     );
 }

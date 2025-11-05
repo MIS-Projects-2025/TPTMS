@@ -18,6 +18,7 @@ import TaskTable from "./TaskTable";
 import TaskHistoryModal from "./TaskHistoryModal";
 import TaskNoteModal from "./TaskNoteModal";
 import NewTaskModal from "./NewTaskModal";
+import TaskSkeleton from "./TaskSkeleton";
 const TaskIndex = () => {
     const { emp_data, tasks, error } = usePage().props;
 
@@ -265,6 +266,7 @@ const TaskIndex = () => {
                 onSearch={setSearchTerm}
                 setIsModalOpen={setIsModalOpen}
             />
+
             <>
                 <NewTaskModal
                     open={isModalOpen}
@@ -283,7 +285,10 @@ const TaskIndex = () => {
                         className="mb-4"
                     />
                 )}
-                {isCardView ? (
+
+                {loading ? (
+                    <TaskSkeleton isCardView={isCardView} />
+                ) : isCardView ? (
                     <TaskCardView
                         tasks={filteredTasks}
                         loading={loading}
@@ -300,6 +305,7 @@ const TaskIndex = () => {
                         handleQuickComplete={handleQuickComplete}
                     />
                 )}
+
                 <TaskHistoryModal
                     visible={historyModal.visible}
                     logs={historyModal.logs}
@@ -311,6 +317,7 @@ const TaskIndex = () => {
                         })
                     }
                 />
+
                 <TaskNoteModal
                     visible={noteModal.visible}
                     noteText={noteText}

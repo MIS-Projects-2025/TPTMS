@@ -10,6 +10,7 @@ import {
     Button,
     Dropdown,
     Menu,
+    Skeleton,
 } from "antd";
 import {
     UserOutlined,
@@ -22,7 +23,7 @@ import ProjectNavbar from "@/Components/ProjectNavbar";
 import ImportModal from "./ImportModal";
 import ProjectLogsModal from "./ProjectLogsModal";
 import useProjectLogs from "@/Hooks/useProjectLogs";
-
+import ProjectTableSkeleton from "./ProjectTableSkeleton";
 export default function ProjectsTable() {
     const {
         projects,
@@ -333,7 +334,9 @@ export default function ProjectsTable() {
             />
 
             <Spin spinning={loading}>
-                {projects?.length > 0 ? (
+                {loading ? (
+                    <ProjectTableSkeleton />
+                ) : projects?.length > 0 ? (
                     <Table
                         columns={columns}
                         dataSource={projects}
@@ -355,7 +358,6 @@ export default function ProjectsTable() {
                     </div>
                 )}
             </Spin>
-
             {/* 📦 Import Modal */}
             <ImportModal
                 isOpen={showImportModal}
