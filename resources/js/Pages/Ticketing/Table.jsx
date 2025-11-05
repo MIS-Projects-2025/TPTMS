@@ -555,7 +555,7 @@ export default function TicketTable() {
                                     onChange={handleTableChange}
                                     bordered
                                     size="middle"
-                                    scroll={{ x: 1200 }}
+                                    scroll={{ x: 1000, y: "50vh" }}
                                     className="bg-base-100 rounded-xl shadow-md"
                                     loading={loading}
                                 />

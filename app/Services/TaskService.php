@@ -97,7 +97,29 @@ class TaskService
     {
         return $this->taskRepository->getExistingTasks($empId);
     }
+    public function getProgrammersList()
+    {
+        return $this->taskRepository->getProgrammersList();
+    }
+    public function getAllTasks()
+    {
+        return $this->taskRepository->getAllTasks();
+    }
+    /**
+     * Get tasks with programmers list for current user
+     */
+    public function getTasksWithProgrammers($empId)
+    {
+        $tasks = $this->getTasksForUser($empId)
+            ->map(fn($task) => $this->formatTask($task));
 
+        $programmers = $this->getProgrammersList();
+
+        return [
+            'tasks' => $tasks->toArray(),
+            'programmers' => $programmers,
+        ];
+    }
     /**
      * Get task history/logs
      */
@@ -134,7 +156,7 @@ class TaskService
             $sourceName = $project->PROJ_NAME ?? null;
         }
 
-        // ✅ If task is from a ticket, get TYPE_OF_REQUEST (mapped using TicketConstants)
+        // ✅ If task is from a ticket, get TYPE_OF_REQUEST
         if (strtolower($task->SOURCE_TYPE) === 'ticket' && !empty($task->SOURCE_ID)) {
             $ticket = $this->ticketService->getTicketByCode($task->SOURCE_ID);
 
@@ -152,6 +174,39 @@ class TaskService
             }
         }
 
+        // ✅ Convert CSV employee IDs to array
+        $employeeIds = !empty($task->EMPLOYID)
+            ? array_filter(explode(',', $task->EMPLOYID))
+            : [];
+
+        // ✅ Get employee names directly from TaskRepository
+        $employeeNames = [];
+        if (!empty($employeeIds)) {
+            $employees = $this->getEmployeesByIds($employeeIds);
+
+            foreach ($employees as $emp) {
+                $firstName = trim($emp->FIRSTNAME ?? '');
+                $middleInitial = trim($emp->MIDDLE_INITIAL ?? '');
+                $lastName = trim($emp->LASTNAME ?? '');
+
+                // Format full name: "Firstname M. Lastname"
+                $fullName = $firstName . ' ' .
+                    ($middleInitial ? strtoupper(substr($middleInitial, 0, 1)) . '. ' : '') .
+                    $lastName;
+
+                // Create initials: first and last name initials
+                $initials = strtoupper(
+                    substr($firstName, 0, 1) . substr($lastName, 0, 1)
+                );
+
+                $employeeNames[] = [
+                    'emp_id' => $emp->EMPLOYID,
+                    'fullName' => $fullName,
+                    'initials' => $initials,
+                ];
+            }
+        }
+
         return [
             'id' => $task->TASK_ID,
             'date' => $task->TASK_DATE,
@@ -162,16 +217,23 @@ class TaskService
             'source_type' => $task->SOURCE_TYPE,
             'source_label' => $sourceMap[$task->SOURCE_TYPE] ?? 'Unknown',
             'source_id' => $task->SOURCE_ID,
-            'source_name' => $sourceName, // ✅ Now shows TYPE_OF_REQUEST (human-readable)
+            'source_name' => $sourceName,
             'priority' => $task->PRIORITY ?? 3,
             'created_by' => $task->CREATED_BY,
             'created_at' => $task->CREATED_AT,
             'updated_at' => $task->UPDATED_AT,
-            'employee_ids' => explode(',', $task->EMPLOYID),
+            'employee_ids' => $employeeIds,
+            'employee_names' => $employeeNames, // ✅ array of employees with initials
             'progress_notes' => $task->PROGRESS_NOTES,
         ];
     }
 
+
+    // ✅ Proper TaskService helper function
+    public function getEmployeesByIds($ids)
+    {
+        return $this->taskRepository->getEmployeesByIds($ids);
+    }
 
     /**
      * Complete task with status update

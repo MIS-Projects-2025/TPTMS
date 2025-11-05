@@ -14,7 +14,8 @@ export default function useTask(tasks) {
     // FILTER STATES
     // ========================================
     const [selectedDates, setSelectedDates] = useState(null);
-    const [selectedStatus, setSelectedStatus] = useState(1); // Changed from 1 to null (show all by default)
+    const [selectedStatus, setSelectedStatus] = useState(null); // Show all by default
+    const [selectedProgrammer, setSelectedProgrammer] = useState(null); // Add programmer filter state
     const [searchTerm, setSearchTerm] = useState("");
     const [sortKey, setSortKey] = useState(null);
 
@@ -32,6 +33,7 @@ export default function useTask(tasks) {
      */
     const resetFilters = () => {
         setSelectedStatus(null);
+        setSelectedProgrammer(null); // Reset programmer filter
         setSelectedDates(null);
         setSearchTerm("");
         setSortKey(null);
@@ -52,6 +54,9 @@ export default function useTask(tasks) {
      * Filtered and sorted tasks based on all active filters
      */
     const filteredTasks = useMemo(() => {
+        console.log("All tasks:", tasks);
+        console.log("Selected programmer:", selectedProgrammer);
+
         let result = [...tasks];
 
         // Date filter
@@ -62,7 +67,7 @@ export default function useTask(tasks) {
 
         if (start && end) {
             result = result.filter((task) => {
-                const taskDate = dayjs(task.date).startOf("day"); // Updated: use 'date' instead of 'TASK_DATE'
+                const taskDate = dayjs(task.date).startOf("day");
                 return (
                     taskDate.isSameOrAfter(start) &&
                     taskDate.isSameOrBefore(end)
@@ -72,7 +77,34 @@ export default function useTask(tasks) {
 
         // Status filter
         if (selectedStatus !== null && selectedStatus !== undefined) {
-            result = result.filter((task) => task.status === selectedStatus); // Updated: use 'status' instead of 'STATUS'
+            result = result.filter((task) => task.status === selectedStatus);
+        }
+
+        // Programmer filter - DEBUGGING VERSION
+        if (selectedProgrammer) {
+            console.log("Filtering by programmer:", selectedProgrammer);
+            result = result.filter((task) => {
+                console.log("Task employee data:", {
+                    id: task.id,
+                    employee_ids: task.employee_ids,
+                    employid: task.employid, // Check if it's called employid instead
+                    assigned_to: task.assigned_to, // Check other possible field names
+                });
+
+                // Try multiple possible field names
+                const isAssignedToProgrammer =
+                    task.employee_ids?.includes(selectedProgrammer) ||
+                    task.employid === selectedProgrammer ||
+                    task.assigned_to === selectedProgrammer ||
+                    (Array.isArray(task.employee_ids) &&
+                        task.employee_ids.includes(selectedProgrammer));
+
+                console.log(
+                    "Is assigned to programmer:",
+                    isAssignedToProgrammer
+                );
+                return isAssignedToProgrammer;
+            });
         }
 
         // Search filter
@@ -80,26 +112,32 @@ export default function useTask(tasks) {
             const lower = searchTerm.toLowerCase();
             result = result.filter(
                 (task) =>
-                    task.title?.toLowerCase().includes(lower) || // Updated: use 'title' instead of 'TASK_TITLE'
-                    task.description?.toLowerCase().includes(lower) || // Updated: use 'description' instead of 'TASK_DESCRIPTION'
-                    task.created_by?.toLowerCase().includes(lower) || // Updated: use 'created_by' instead of 'CREATED_BY'
-                    task.id?.toLowerCase().includes(lower) // Added: search by task ID
+                    task.title?.toLowerCase().includes(lower) ||
+                    task.description?.toLowerCase().includes(lower) ||
+                    task.created_by?.toLowerCase().includes(lower) ||
+                    task.id?.toLowerCase().includes(lower)
             );
         }
 
         // Sorting
         if (sortKey === "date") {
-            result.sort(
-                (a, b) => new Date(b.date) - new Date(a.date) // Updated: use 'date'
-            );
+            result.sort((a, b) => new Date(b.date) - new Date(a.date));
         } else if (sortKey === "priority") {
-            result.sort((a, b) => a.priority - b.priority); // Updated: use 'priority'
+            result.sort((a, b) => a.priority - b.priority);
         } else if (sortKey === "status") {
-            result.sort((a, b) => a.status - b.status); // Updated: use 'status'
+            result.sort((a, b) => a.status - b.status);
         }
 
+        console.log("Filtered result:", result);
         return result;
-    }, [tasks, searchTerm, sortKey, selectedDates, selectedStatus]);
+    }, [
+        tasks,
+        searchTerm,
+        sortKey,
+        selectedDates,
+        selectedStatus,
+        selectedProgrammer,
+    ]);
 
     // ========================================
     // STATISTICS (Bonus feature)
@@ -122,6 +160,7 @@ export default function useTask(tasks) {
         // Filter states
         selectedDates,
         selectedStatus,
+        selectedProgrammer, // Add to return
         searchTerm,
         sortKey,
 
@@ -135,6 +174,7 @@ export default function useTask(tasks) {
         // Filter setters
         setSelectedDates,
         setSelectedStatus,
+        setSelectedProgrammer, // Add setter
         setSearchTerm,
         setSortKey,
 

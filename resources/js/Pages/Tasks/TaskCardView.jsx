@@ -1,5 +1,5 @@
 import React from "react";
-import { Card, Button, Dropdown, Tag } from "antd";
+import { Card, Button, Dropdown, Tag, Avatar, Tooltip } from "antd";
 import { CheckCircleOutlined, MoreOutlined } from "@ant-design/icons";
 
 const TaskCardView = ({
@@ -8,6 +8,8 @@ const TaskCardView = ({
     getStatusColor,
     getActionItems,
     handleQuickComplete,
+    isSupervisor,
+    getColorFromString,
 }) => {
     const priorityColors = {
         1: "red",
@@ -31,26 +33,29 @@ const TaskCardView = ({
                 <Card
                     key={task.id}
                     className="shadow-sm border border-base-300 hover:shadow-md transition-shadow"
-                    actions={[
-                        task.status !== 3 && (
-                            <Button
-                                type="link"
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => handleQuickComplete(task.id)}
-                                loading={loading}
+                    actions={
+                        !isSupervisor &&
+                        [
+                            task.status !== 3 && (
+                                <Button
+                                    type="link"
+                                    icon={<CheckCircleOutlined />}
+                                    onClick={() => handleQuickComplete(task.id)}
+                                    loading={loading}
+                                >
+                                    Complete
+                                </Button>
+                            ),
+                            <Dropdown
+                                menu={{ items: getActionItems(task) }}
+                                trigger={["click"]}
                             >
-                                Complete
-                            </Button>
-                        ),
-                        <Dropdown
-                            menu={{ items: getActionItems(task) }}
-                            trigger={["click"]}
-                        >
-                            <Button type="link" icon={<MoreOutlined />}>
-                                More
-                            </Button>
-                        </Dropdown>,
-                    ].filter(Boolean)}
+                                <Button type="link" icon={<MoreOutlined />}>
+                                    More
+                                </Button>
+                            </Dropdown>,
+                        ].filter(Boolean)
+                    }
                 >
                     <div className="mb-3">
                         <div className="flex justify-between items-start mb-2">
@@ -61,6 +66,28 @@ const TaskCardView = ({
                                 {task.status_label}
                             </Tag>
                         </div>
+
+                        {/* 👇 Show programmer avatars if supervisor */}
+                        {isSupervisor && task.employee_names?.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                                {task.employee_names.map((emp, index) => (
+                                    <Tooltip key={index} title={emp.fullName}>
+                                        <Avatar
+                                            size={24}
+                                            style={{
+                                                backgroundColor:
+                                                    getColorFromString(
+                                                        emp.emp_id
+                                                    ),
+                                                fontSize: "11px",
+                                            }}
+                                        >
+                                            {emp.initials}
+                                        </Avatar>
+                                    </Tooltip>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     <h3 className="font-bold mb-2">{task.title}</h3>

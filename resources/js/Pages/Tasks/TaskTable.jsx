@@ -1,5 +1,5 @@
 import React from "react";
-import { Table, Button, Dropdown, Tag } from "antd";
+import { Table, Button, Dropdown, Tag, Avatar, Tooltip } from "antd";
 import { CheckCircleOutlined, MoreOutlined } from "@ant-design/icons";
 import { Ticket } from "lucide-react";
 
@@ -9,6 +9,8 @@ const TaskTable = ({
     getStatusColor,
     getActionItems,
     handleQuickComplete,
+    isSupervisor,
+    getColorFromString,
 }) => {
     const priorityColors = {
         1: "red",
@@ -81,6 +83,51 @@ const TaskTable = ({
                 </>
             ),
         },
+        isSupervisor && {
+            title: "Programmer",
+            dataIndex: "employee_names",
+            key: "employee_names",
+            width: 50,
+            align: "center", // ✅ helps keep avatars centered
+            render: (employees) => {
+                if (!employees || !employees.length)
+                    return (
+                        <span className="text-gray-400 text-xs block text-center">
+                            No Data
+                        </span>
+                    );
+
+                return (
+                    <div
+                        style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "4px",
+                            overflowY: "auto",
+                            maxHeight: "60px",
+                        }}
+                    >
+                        {employees.map((emp, index) => (
+                            <Tooltip key={index} title={emp.fullName}>
+                                <Avatar
+                                    size={22}
+                                    style={{
+                                        backgroundColor: getColorFromString(
+                                            emp.emp_id
+                                        ),
+                                        fontSize: "10px",
+                                        lineHeight: "20px",
+                                    }}
+                                >
+                                    {emp.initials}
+                                </Avatar>
+                            </Tooltip>
+                        ))}
+                    </div>
+                );
+            },
+        },
         {
             title: "Status",
             dataIndex: "status",
@@ -105,7 +152,7 @@ const TaskTable = ({
             title: "Date",
             dataIndex: "date",
             key: "date",
-            width: 50,
+            width: 80,
             render: (date) => {
                 if (!date) return "";
                 const formattedDate = new Date(date).toLocaleDateString(
@@ -120,7 +167,7 @@ const TaskTable = ({
             },
         },
 
-        {
+        !isSupervisor && {
             title: "Actions",
             key: "actions",
             width: 80,
@@ -147,7 +194,7 @@ const TaskTable = ({
                 </div>
             ),
         },
-    ];
+    ].filter(Boolean);
 
     return (
         <Table
@@ -159,6 +206,7 @@ const TaskTable = ({
             size="middle"
             scroll={{ x: 1000 }}
             loading={loading}
+            style={{ tableLayout: "fixed" }} // 🔒 Forces strict column widths
         />
     );
 };

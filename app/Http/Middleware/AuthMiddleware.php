@@ -52,6 +52,7 @@ class AuthMiddleware
                 'emp_station' => $currentUser->emp_station,
                 'generated_at' => $currentUser->generated_at,
                 'emp_system_role' => $systemRole,
+
             ]]);
 
             // 5️⃣ Store NotificationUser for broadcasting

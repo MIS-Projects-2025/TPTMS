@@ -39,6 +39,40 @@ class TaskRepository
             ->orderBy('CREATED_AT', 'desc')
             ->value('TASK_ID');
     }
+    public function getProgrammersList()
+    {
+        return DB::connection('masterlist')
+            ->table('employee_masterlist')
+            ->Where('JOB_TITLE', 'like', '%Programmer%')
+            ->where('ACCSTATUS', 1)
+            ->select('EMPLOYID', 'EMPNAME')
+            ->orderBy('EMPLOYID')
+            ->get()
+            ->toArray();
+    }
+    public function getAllTasks()
+    {
+        return $this->connection->table('daily_tasks')
+            ->whereNull('DELETED_AT')
+            ->orderByDesc('CREATED_AT')
+            ->get();
+    }
+    public function getEmployeesByIds($ids)
+    {
+        if (empty($ids)) {
+            return [];
+        }
+
+        // ✅ Use the DB facade directly (no "$this->DB::")
+        return DB::connection('masterlist')
+            ->table('employee_masterlist') // ✅ match your actual table name
+            ->select('EMPLOYID', 'FIRSTNAME', 'MIDDLE_INITIAL', 'LASTNAME') // ✅ match column names
+            ->whereIn('EMPLOYID', $ids)
+            ->get()
+            ->toArray();
+    }
+
+
 
     public function getExistingTasks($empId)
     {

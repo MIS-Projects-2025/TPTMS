@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { use, useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import { Modal, message, Alert, Button } from "antd";
 import {
@@ -20,8 +20,15 @@ import TaskNoteModal from "./TaskNoteModal";
 import NewTaskModal from "./NewTaskModal";
 import TaskSkeleton from "./TaskSkeleton";
 const TaskIndex = () => {
-    const { emp_data, tasks, error } = usePage().props;
-
+    const {
+        emp_data,
+        tasks,
+        error,
+        programmers = [],
+        is_supervisor,
+    } = usePage().props;
+    console.log(usePage().props);
+    const isSupervisor = is_supervisor;
     const currentUser = emp_data.emp_id;
 
     const [loading, setLoading] = useState(false);
@@ -65,16 +72,17 @@ const TaskIndex = () => {
     const {
         selectedDates,
         selectedStatus,
+        selectedProgrammer,
         searchTerm,
         isCardView,
         filteredTasks,
         setSelectedDates,
         setSelectedStatus,
+        setSelectedProgrammer,
         setSearchTerm,
         resetFilters,
         toggleView,
     } = useTask(tasks);
-
     // Quick status update
     const handleStatusChange = async (taskId, newStatus, remarks = null) => {
         setLoading(true);
@@ -251,13 +259,32 @@ const TaskIndex = () => {
         4: "Low",
         5: "N/A",
     };
+    const getColorFromString = (str) => {
+        const colors = [
+            "#f56a00",
+            "#7265e6",
+            "#ffbf00",
+            "#00a2ae",
+            "#13c2c2",
+            "#eb2f96",
+        ];
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return colors[Math.abs(hash) % colors.length];
+    };
 
     return (
         <TaskLayout
             selectedDates={selectedDates}
+            selectedProgrammer={selectedProgrammer}
             onDateChange={setSelectedDates}
             onFilterStatus={setSelectedStatus}
+            onProgrammerChange={setSelectedProgrammer}
             onResetFilters={resetFilters}
+            programmers={programmers}
+            isSupervisor={isSupervisor}
         >
             <TaskNavbar
                 isCardView={isCardView}
@@ -265,6 +292,7 @@ const TaskIndex = () => {
                 searchTerm={searchTerm}
                 onSearch={setSearchTerm}
                 setIsModalOpen={setIsModalOpen}
+                isSupervisor={isSupervisor}
             />
 
             <>
@@ -295,6 +323,8 @@ const TaskIndex = () => {
                         getStatusColor={getStatusColor}
                         getActionItems={getActionItems}
                         handleQuickComplete={handleQuickComplete}
+                        isSupervisor={isSupervisor}
+                        getColorFromString={getColorFromString}
                     />
                 ) : (
                     <TaskTable
@@ -303,6 +333,8 @@ const TaskIndex = () => {
                         getStatusColor={getStatusColor}
                         getActionItems={getActionItems}
                         handleQuickComplete={handleQuickComplete}
+                        isSupervisor={isSupervisor}
+                        getColorFromString={getColorFromString}
                     />
                 )}
 

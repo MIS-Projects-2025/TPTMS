@@ -47,32 +47,70 @@ class TaskController extends Controller
     /**
      * Get tasks for current user
      */
+    // In TaskController.php
+    /**
+     * Get tasks for current user with programmers list
+     */
     public function getTask()
     {
         $empData = session('emp_data');
-        if (!$empData) return redirect()->route('login');
+        if (!$empData) {
+            return redirect()->route('login');
+        }
 
         try {
-            $tasks = $this->taskService->getTasksForUser($empData['emp_id'])
-                ->map(fn($task) => $this->taskService->formatTask($task));
+            // Check if user is MIS Supervisor
+            $isSupervisor = $this->isMISSupervisor($empData);
 
-            Log::info('Tasks loaded', ['count' => $tasks->count()]);
+            if ($isSupervisor) {
+                // MIS Supervisor gets all tasks
+                $tasks = $this->taskService->getAllTasks()
+                    ->map(fn($task) => $this->taskService->formatTask($task));
+                Log::info('MIS Supervisor accessed all tasks', [
+                    'supervisor' => $empData['emp_name'],
+                    'task_count' => $tasks->count()
+                ]);
+            } else {
+                // Regular user gets only their tasks
+                $tasks = $this->taskService->getTasksForUser($empData['emp_id'])
+                    ->map(fn($task) => $this->taskService->formatTask($task));
+                Log::info('User accessed their tasks', [
+                    'user' => $empData['emp_name'],
+                    'task_count' => $tasks->count()
+                ]);
+            }
+
+            // Get programmers list for filter
+            $programmers = $this->taskService->getProgrammersList();
 
             return Inertia::render('Tasks/Index', [
                 'tasks' => $tasks->toArray(),
-                'currentUser' => $empData['emp_id'] ?? null,
+                'emp_data' => $empData,
+                'programmers' => $programmers,
+                'is_supervisor' => $isSupervisor,
             ]);
         } catch (\Exception $e) {
-            Log::error('Error loading tasks: ' . $e->getMessage());
+            Log::error('Error loading tasks: ' . $e->getMessage(), [
+                'user' => $empData['emp_id'],
+                'exception' => $e->getTraceAsString()
+            ]);
 
             return Inertia::render('Tasks/Index', [
                 'tasks' => [],
-                'currentUser' => $empData['emp_id'] ?? null,
-                'error' => 'Failed to load tasks',
+                'emp_data' => $empData,
+                'programmers' => [],
+                'is_supervisor' => false,
+                'error' => 'Failed to load tasks. Please try again.',
             ]);
         }
     }
+    private function isMISSupervisor($empData)
+    {
+        $dept = strtoupper($empData['emp_dept'] ?? '');
+        $jobTitle = strtolower($empData['emp_jobtitle'] ?? '');
 
+        return $dept === 'MIS' && strpos($jobTitle, 'supervisor') !== false;
+    }
     public function getExistingTasks($empId)
     {
         $tasks = $this->taskService->getExistingTasks($empId);

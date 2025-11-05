@@ -8,6 +8,7 @@ export default function TaskNavbar({
     searchTerm,
     onSearch,
     setIsModalOpen,
+    isSupervisor,
 }) {
     return (
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-base-100 px-4 py-3 rounded-xl shadow-sm border border-base-300">
@@ -41,15 +42,16 @@ export default function TaskNavbar({
                         )}
                     </button>
                 </Tooltip>
-
-                <Tooltip title="New Task">
-                    <button
-                        className="btn btn-sm btn-primary flex items-center gap-2"
-                        onClick={() => setIsModalOpen(true)}
-                    >
-                        <PlusCircle className="w-4 h-4" /> New Task
-                    </button>
-                </Tooltip>
+                {!isSupervisor && (
+                    <Tooltip title="New Task">
+                        <button
+                            className="btn btn-sm btn-primary flex items-center gap-2"
+                            onClick={() => setIsModalOpen(true)}
+                        >
+                            <PlusCircle className="w-4 h-4" /> New Task
+                        </button>
+                    </Tooltip>
+                )}
             </div>
         </div>
     );

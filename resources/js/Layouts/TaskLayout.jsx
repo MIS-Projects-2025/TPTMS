@@ -1,19 +1,32 @@
 import React, { useContext } from "react";
 import { Link } from "@inertiajs/react";
-import { ArrowLeft, Filter, RefreshCcw } from "lucide-react";
+import { ArrowLeft, Filter, RefreshCcw, Users } from "lucide-react";
 import ThemeToggler from "@/Components/sidebar/ThemeToggler";
 import { ThemeContext } from "@/Components/ThemeContext";
-import { DatePicker } from "antd";
+import { DatePicker, Select } from "antd";
 import NavBar from "@/Components/NavBar";
+
+const { Option } = Select;
 
 export default function TaskLayout({
     children,
     selectedDates,
+    selectedProgrammer,
     onDateChange,
     onFilterStatus,
+    onProgrammerChange,
     onResetFilters,
+    programmers = [], // Add programmers prop
+    isSupervisor,
 }) {
     const { theme, toggleTheme } = useContext(ThemeContext);
+
+    // Normalize programmer data to match expected format
+    const normalizedProgrammers = programmers.map((programmer) => ({
+        id: programmer.EMPLOYID || programmer.id,
+        name: programmer.EMPNAME || programmer.name,
+        email: programmer.email || "", // Add email if available
+    }));
 
     return (
         <div className="flex h-screen bg-base-200">
@@ -31,7 +44,7 @@ export default function TaskLayout({
                         Filters
                     </h2>
                     <div className="space-y-2">
-                        {/* Date Range Picker - Controlled by parent */}
+                        {/* Date Range Picker */}
                         <DatePicker.RangePicker
                             value={selectedDates}
                             onChange={(dates) => {
@@ -41,7 +54,6 @@ export default function TaskLayout({
                                         dates[1].endOf("day"),
                                     ]);
                                 } else {
-                                    // User cleared the selection
                                     onDateChange(null);
                                 }
                             }}
@@ -49,6 +61,25 @@ export default function TaskLayout({
                             allowEmpty={[true, true]}
                             className="w-full"
                         />
+                        {isSupervisor && (
+                            <Select
+                                placeholder="Filter by Programmer"
+                                value={selectedProgrammer || undefined} // Convert null to undefined to avoid warning
+                                onChange={onProgrammerChange}
+                                allowClear
+                                className="w-full"
+                                suffixIcon={<Users className="w-4 h-4" />}
+                            >
+                                {normalizedProgrammers.map((programmer) => (
+                                    <Option
+                                        key={programmer.id} // Use unique ID as key
+                                        value={programmer.id}
+                                    >
+                                        {programmer.name}
+                                    </Option>
+                                ))}
+                            </Select>
+                        )}
 
                         {/* Status filters */}
                         <button
