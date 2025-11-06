@@ -17,4 +17,5 @@ Route::prefix($app_name)
         Route::post('/projectList/import', [ProjectController::class, 'importExcel'])->name('project.import');
         Route::get('/projectList/template', [ProjectController::class, 'downloadTemplate'])->name('project.template');
         Route::get('/projects/{id}/logs', [ProjectController::class, 'getProjectLogs'])->name('project.logs');
+        Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name('project.update');
     });

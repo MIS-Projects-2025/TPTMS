@@ -63,12 +63,46 @@ class ProjectService
                 'total' => $result['total'],
                 'last_page' => $result['last_page'],
             ],
-            'departments' => $this->projectRepository->getDepartments(),
+            // 'departments' => $this->projectRepository->getDepartments(),
             'statusCounts' => $this->projectRepository->getStatusCounts(),
             'filters' => $filters,
         ];
     }
+    public function updateProject($projectId, array $data, $updatedBy)
+    {
+        $project = $this->projectRepository->getProjectById($projectId);
+        if (!$project) {
+            throw new \Exception("Project not found");
+        }
 
+        $updateData = [
+            'PROJ_NAME' => $data['name'],
+            'PROJ_DESC' => $data['description'],
+            'PROJ_DEPT' => $data['department'],
+            'PROJ_HANDLER' => !empty($data['handler_ids']) ? implode(',', $data['handler_ids']) : null,
+            'TARGET_DEADLINE' => $data['target_deadline'] ?? null,
+            'PROJ_STATUS' => $data['status'],
+            'UPDATED_BY' => $updatedBy,
+            'UPDATED_AT' => now(),
+        ];
+
+        $this->projectRepository->updateProject($projectId, $updateData);
+
+        // Log the update action
+        $this->logAction(
+            $projectId,
+            'UPDATED',
+            'Project details updated',
+            null,
+            $updatedBy
+        );
+
+        return true;
+    }
+    public function getAllDepartments()
+    {
+        return $this->projectRepository->getAllDepartments();
+    }
     public function formatProject($project)
     {
         $statusOptions = ProjectConstants::getProjectStatusMap();
@@ -95,6 +129,28 @@ class ProjectService
                 })->toArray();
             }
         }
+        // Parse assigned programmers
+        $handler = [];
+        if (!empty($project->PROJ_HANDLER)) {
+            $empIds = array_filter(explode(',', $project->PROJ_HANDLER));
+
+            if (!empty($empIds)) {
+                $employees = $this->projectRepository->getEmployeesByIds($empIds);
+
+                $handler = $employees->map(function ($emp) {
+                    $fullName = trim($emp->FIRSTNAME . ' ' . $emp->MIDDLE_INITIAL . ' ' . $emp->LASTNAME);
+                    $firstInitial = !empty($emp->FIRSTNAME) ? strtoupper(substr($emp->FIRSTNAME, 0, 1)) : '';
+                    $lastInitial = !empty($emp->LASTNAME) ? strtoupper(substr($emp->LASTNAME, 0, 1)) : '';
+                    $tableInitial = $firstInitial . $lastInitial;
+
+                    return [
+                        'emp_id' => $emp->EMPLOYID,
+                        'initials' => $tableInitial,
+                        'full_name' => $fullName
+                    ];
+                })->toArray();
+            }
+        }
 
         // Get tickets based on project status
         $activeTickets = $this->getProjectTickets($project);
@@ -106,7 +162,9 @@ class ProjectService
             'department' => $project->PROJ_DEPT,
             'status' => $statusOptions[$project->PROJ_STATUS] ?? 'Unknown',
             'assigned_to' => $assignedTo,
+            'proj_handler' => $handler,
             'created_at' => $project->CREATED_AT,
+            'target_deadline' => $project->TARGET_DEADLINE,
             'active_tickets' => $activeTickets,
         ];
     }
@@ -385,6 +443,10 @@ class ProjectService
             'project' => $projectName,
             'new_status' => $newStatus
         ]);
+    }
+    public function getHandlerOptions(array $departments)
+    {
+        return $this->projectRepository->getHandlerOptions($departments);
     }
 
     private function getActionTypeForStatus($status)

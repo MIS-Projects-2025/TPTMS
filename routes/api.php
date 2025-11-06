@@ -1,12 +1,13 @@
 <?php
 
+use App\Http\Controllers\ProjectConstantsController;
 use App\Http\Controllers\ProjectController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Broadcast;
 use App\Models\NotificationUser;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
-use App\Http\Middleware\AuthMiddleware; // Re-importing custom middleware
+use App\Http\Middleware\AuthMiddleware;
 use App\Http\Controllers\TicketingController;
 // ========== PUBLIC API ROUTES (No authentication required) ==========
 
@@ -148,4 +149,10 @@ Route::prefix('api')->middleware(AuthMiddleware::class)->group(function () {
     Route::get('/tickets/count', [TicketingController::class, 'getTicketsCount'])->name('tickets.count');
 
     Route::get('/projects/assigned/{empId}', [ProjectController::class, 'getAssignedProjects']);
+    Route::get('/projects/handlers/{department}', [ProjectController::class, 'getHandlerOptionsByDepartment'])
+        ->name('projects.getHandlers');
+    Route::get('/departments', [ProjectController::class, 'getAllDepartments'])
+        ->name('projects.getAllDepartments');
+    Route::get('/project-constants', [ProjectConstantsController::class, 'index'])
+        ->name('api.project-constants');
 });

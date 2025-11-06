@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { use, useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import {
     Table,
@@ -10,20 +10,24 @@ import {
     Button,
     Dropdown,
     Menu,
-    Skeleton,
+    Alert,
 } from "antd";
 import {
     UserOutlined,
     PlusOutlined,
     FileSearchOutlined,
     MoreOutlined,
+    EditOutlined,
 } from "@ant-design/icons";
 import ProjectLayout from "@/Layouts/ProjectLayout";
 import ProjectNavbar from "@/Components/ProjectNavbar";
 import ImportModal from "./ImportModal";
 import ProjectLogsModal from "./ProjectLogsModal";
+import ProjectEditDrawer from "./ProjectEditDrawer";
 import useProjectLogs from "@/Hooks/useProjectLogs";
+import useProjectConstants from "@/Hooks/useProjectConstants";
 import ProjectTableSkeleton from "./ProjectTableSkeleton";
+
 export default function ProjectsTable() {
     const {
         projects,
@@ -42,6 +46,7 @@ export default function ProjectsTable() {
     const [filters, setFilters] = useState(initialFilters || {});
     const [showImportModal, setShowImportModal] = useState(false);
     const [showLogsModal, setShowLogsModal] = useState(false);
+    const [showEditDrawer, setShowEditDrawer] = useState(false);
     const [selectedProject, setSelectedProject] = useState(null);
 
     const {
@@ -50,14 +55,22 @@ export default function ProjectsTable() {
         pagination: logPagination,
         fetchProjectLogs,
     } = useProjectLogs(appName);
-    console.log(projectLogs);
 
+    // Fetch project constants from API
+    const {
+        loading: constantsLoading,
+        error: constantsError,
+        projectStatuses,
+        getStatusLabel,
+        getStatusColor,
+    } = useProjectConstants();
+    console.log(projectStatuses);
     const encodeParams = (params) => btoa(JSON.stringify(params));
 
     // ✅ Create Ticket
     const handleCreateTicket = (project) => {
         const params = new URLSearchParams();
-        params.set("project", btoa(project.name)); // encode project name
+        params.set("project", btoa(project.name));
         window.location.href = `${route("tickets")}?${params.toString()}`;
     };
 
@@ -100,6 +113,7 @@ export default function ProjectsTable() {
             { preserveState: true, onFinish: () => setLoading(false) }
         );
     };
+
     const getColorFromString = (str) => {
         const colors = [
             "#1890ff",
@@ -125,9 +139,62 @@ export default function ProjectsTable() {
         fetchProjectLogs(project.id, 1);
     };
 
+    const handleEditProject = (project) => {
+        setSelectedProject(project);
+        setShowEditDrawer(true);
+    };
+
+    // Render avatar group helper
+    const renderAvatarGroup = (people, maxCount = 2) => {
+        if (!people || people.length === 0) {
+            return <span className="text-gray-400">-</span>;
+        }
+
+        const visible = people.slice(0, maxCount);
+        const hidden = people.slice(maxCount);
+        const remaining = hidden.length;
+        const hiddenNames = hidden
+            .map((p) => p.fullName || p.full_name)
+            .join(", ");
+
+        return (
+            <Avatar.Group maxCount={maxCount} size="default">
+                {visible.map((person) => (
+                    <Tooltip
+                        key={person.emp_id}
+                        title={person.fullName || person.full_name}
+                    >
+                        <Avatar
+                            style={{
+                                backgroundColor: getColorFromString(
+                                    person.emp_id
+                                ),
+                            }}
+                        >
+                            {person.initials}
+                        </Avatar>
+                    </Tooltip>
+                ))}
+                {remaining > 0 && (
+                    <Tooltip title={hiddenNames}>
+                        <Avatar style={{ backgroundColor: "#f56a00" }}>
+                            +{remaining}
+                        </Avatar>
+                    </Tooltip>
+                )}
+            </Avatar.Group>
+        );
+    };
+
     // 🧱 Table Columns
     const columns = [
-        { title: "Project Name", dataIndex: "name", key: "name", width: 180 },
+        {
+            title: "Project Name",
+            dataIndex: "name",
+            key: "name",
+            width: 180,
+            fixed: "left",
+        },
         {
             title: "Description",
             dataIndex: "description",
@@ -144,48 +211,15 @@ export default function ProjectsTable() {
             title: "Assigned To",
             dataIndex: "assigned_to",
             key: "assigned_to",
-            width: 70,
-            render: (assignedTo) => {
-                if (!assignedTo || assignedTo.length === 0) {
-                    return <span className="text-gray-400">-</span>;
-                }
-
-                // Only show the first 2 avatars
-                const visible = assignedTo.slice(0, 2);
-                const hidden = assignedTo.slice(2); // rest of the people
-                const remaining = hidden.length;
-
-                // Combine initials of hidden people for tooltip
-                const hiddenInitials = hidden.map((p) => p.initials).join(", ");
-
-                return (
-                    <Avatar.Group maxCount={2} size="default">
-                        {visible.map((person) => (
-                            <Tooltip
-                                key={person.emp_id}
-                                title={person.fullName}
-                            >
-                                <Avatar
-                                    style={{
-                                        backgroundColor: getColorFromString(
-                                            person.emp_id
-                                        ),
-                                    }}
-                                >
-                                    {person.initials}
-                                </Avatar>
-                            </Tooltip>
-                        ))}
-                        {remaining > 0 && (
-                            <Tooltip title={hiddenInitials}>
-                                <Avatar style={{ backgroundColor: "#f56a00" }}>
-                                    +{remaining}
-                                </Avatar>
-                            </Tooltip>
-                        )}
-                    </Avatar.Group>
-                );
-            },
+            width: 120,
+            render: (assignedTo) => renderAvatarGroup(assignedTo, 2),
+        },
+        {
+            title: "Project Handler",
+            dataIndex: "proj_handler",
+            key: "proj_handler",
+            width: 120,
+            render: (handlers) => renderAvatarGroup(handlers, 2),
         },
         {
             title: "Active Requests",
@@ -199,7 +233,6 @@ export default function ProjectsTable() {
                     return <span className="text-gray-400">No tickets</span>;
                 }
 
-                // Show first 2 tickets, rest in tooltip
                 const visible = record.active_tickets.slice(0, 2);
                 const hidden = record.active_tickets.slice(2);
                 const remaining = hidden.length;
@@ -260,37 +293,54 @@ export default function ProjectsTable() {
             },
         },
         {
-            title: "Status",
-            dataIndex: "status",
-            key: "status",
-            width: 100,
-            render: (status) => {
-                const colors = {
-                    Planning: "gold",
-                    "Not Started": "default",
-                    "In Progress": "processing",
-                    "On Hold": "orange",
-                    Ready: "cyan",
-                    Deployed: "geekblue",
-                    Completed: "green",
-                    Cancelled: "red",
-                };
-
+            title: "Target Deadline",
+            dataIndex: "target_deadline",
+            key: "target_deadline",
+            width: 120,
+            render: (deadline) => {
+                if (!deadline) {
+                    return <span className="text-gray-400">Not set</span>;
+                }
                 return (
-                    <Tag color={colors[status] || "default"}>
-                        {status || "Unknown"}
-                    </Tag>
+                    <span className="text-sm">
+                        {new Date(deadline).toLocaleDateString()}
+                    </span>
                 );
             },
         },
         {
+            title: "Status",
+            dataIndex: "status",
+            key: "status",
+            width: 100,
+            render: (statusLabel) => {
+                const statusObj = projectStatuses.find(
+                    (s) => s.label === statusLabel
+                );
+
+                if (!statusObj) {
+                    return <Tag color="default">Unknown</Tag>;
+                }
+
+                return <Tag color={statusObj.color}>{statusObj.label}</Tag>;
+            },
+        },
+
+        {
             title: "Actions",
             key: "actions",
             width: 80,
+            fixed: "right",
             render: (_, record) => {
                 const menu = (
                     <Menu
                         items={[
+                            {
+                                key: "editProject",
+                                label: "Edit Project",
+                                icon: <EditOutlined />,
+                                onClick: () => handleEditProject(record),
+                            },
                             {
                                 key: "viewLogs",
                                 label: "View Logs",
@@ -348,7 +398,7 @@ export default function ProjectsTable() {
                         }}
                         bordered
                         size="middle"
-                        scroll={{ x: 1000, y: "50vh" }}
+                        scroll={{ x: 1400, y: "50vh" }}
                         onChange={handleTableChange}
                         className="bg-base-100 rounded-xl shadow-md"
                     />
@@ -358,6 +408,7 @@ export default function ProjectsTable() {
                     </div>
                 )}
             </Spin>
+
             {/* 📦 Import Modal */}
             <ImportModal
                 isOpen={showImportModal}
@@ -375,6 +426,25 @@ export default function ProjectsTable() {
                     fetchProjectLogs(selectedProject.id, page)
                 }
                 projectName={selectedProject?.name}
+            />
+
+            <ProjectEditDrawer
+                isOpen={showEditDrawer}
+                onClose={() => setShowEditDrawer(false)}
+                project={selectedProject}
+                onUpdated={() => {
+                    // Refetch table data after edit
+                    const encoded = encodeParams(filters);
+                    setLoading(true);
+                    router.get(
+                        route("project.list"),
+                        { q: encoded },
+                        {
+                            preserveState: true,
+                            onFinish: () => setLoading(false),
+                        }
+                    );
+                }}
             />
         </ProjectLayout>
     );

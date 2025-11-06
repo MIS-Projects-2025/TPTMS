@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Services\ProjectService;
 use App\Constants\ProjectConstants;
+use Illuminate\Support\Facades\Log;
 
 class ProjectController extends Controller
 {
@@ -41,7 +42,6 @@ class ProjectController extends Controller
 
             $result = $this->projectService->getProjectsDataTable($request);
 
-            // Pass flag to frontend
             $result['showAllDepartments'] = $showAllDepartments;
 
             return Inertia::render('Projects/Table', $result)
@@ -50,7 +50,77 @@ class ProjectController extends Controller
             return redirect()->back()->with('error', 'Failed to load projects: ' . $e->getMessage());
         }
     }
+    public function update(Request $request, $projectId)
+    {
+        // dd($request->all());
+        try {
+            $empData = session('emp_data');
+            if (!$empData) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
 
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'description' => 'required|string',
+                'department' => 'required|string|max:100',
+                'handler_ids' => 'required|array',
+                'handler_ids.*' => 'string|max:20',
+                'target_deadline' => 'nullable|date',
+                'status' => 'required|integer',
+            ]);
+
+            $this->projectService->updateProject(
+                $projectId,
+                $validated,
+                $empData['emp_id']
+            );
+
+            return redirect()->route('project.list')
+                ->with('success', 'Project updated successfully');
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update project: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getHandlerOptionsByDepartment($department)
+    {
+        try {
+            Log::info('Department received:', ['department' => $department]);
+
+            $department = trim($department);
+
+            // Fetch handlers for that department
+            $handlers = $this->projectService->getHandlerOptions([$department]);
+
+            return response()->json([
+                'success' => true,
+                'handlers' => $handlers,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function getAllDepartments()
+    {
+        try {
+            $departments = $this->projectService->getAllDepartments();
+
+            return response()->json([
+                'success' => true,
+                'departments' => $departments,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
 
     private function isProgrammer($empData)
     {

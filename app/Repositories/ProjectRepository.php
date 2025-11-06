@@ -45,6 +45,7 @@ class ProjectRepository
             'department' => 'PROJ_DEPT',
             'assigned' => 'ASSIGNED_PROGS',
             'status' => 'PROJ_STATUS',
+            'target_deadline' => 'TARGET_DEADLINE',
             'created_at' => 'CREATED_AT',
         ];
 
@@ -264,5 +265,27 @@ class ProjectRepository
             ->whereIn('EMPLOYID', $employeeIds)
             ->select('EMPLOYID', 'FIRSTNAME', 'MIDDLE_INITIAL', 'LASTNAME')
             ->get();
+    }
+    public function getHandlerOptions(array $departments)
+    {
+        // dd($departments);
+        return DB::connection('masterlist')
+            ->table('employee_masterlist')
+            ->whereIn('DEPARTMENT', $departments)
+            ->where('ACCSTATUS', 1)
+            ->whereNot('EMPLOYID', '0')
+            ->select('EMPLOYID', 'EMPNAME', 'DEPARTMENT')
+            ->orderBy('EMPNAME')
+            ->get();
+    }
+    public function getAllDepartments()
+    {
+        return DB::connection('masterlist')
+            ->table('employee_masterlist')
+            ->whereNotNull('DEPARTMENT')
+            ->where('ACCSTATUS', 1)
+            ->distinct()
+            ->pluck('DEPARTMENT')
+            ->toArray();
     }
 }
