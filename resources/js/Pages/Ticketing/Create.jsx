@@ -96,7 +96,22 @@ const Create = () => {
 
     // Disable past dates in DatePicker
     const disabledDate = (current) => {
-        return current && current < dayjs().startOf("day");
+        const today = dayjs().startOf("day");
+
+        if (data.request_type === 5) {
+            // Allow only 1 to 7 days ahead (including today)
+            const maxDate = today.add(7, "day");
+            return current < today || current > maxDate;
+        }
+
+        if (data.request_type === 6) {
+            // Allow up to 31 days ahead (including today)
+            const maxDate = today.add(31, "day");
+            return current < today || current > maxDate;
+        }
+
+        // Default: no restriction
+        return false;
     };
 
     const handleSubmit = (e) => {
