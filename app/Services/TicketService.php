@@ -1468,4 +1468,59 @@ class TicketService
 
         return $this->ticketRepo->getAssignedTickets($empId);
     }
+
+    // Add to TicketService class
+
+    /**
+     * Update overdue testing and parallel run tickets to On Hold status
+     */
+
+
+    public function updateOverdueTicketsToOnHold(): int
+    {
+        $overdueTickets = $this->ticketRepo->findOverdueTickets();
+
+        Log::info("Found " . count($overdueTickets) . " overdue tickets to process");
+
+        $count = 0;
+
+        foreach ($overdueTickets as $ticket) {
+            try {
+                Log::info("Processing ticket {$ticket->TICKET_ID} - due: {$ticket->target_date}, current status: {$ticket->STATUS}");
+
+                // Update ticket status to On Hold
+                $success = $this->ticketRepo->updateTicketToOnHold($ticket->ID);
+
+                if ($success) {
+                    // Log the status change
+                    $this->ticketRepo->logAutoOnHoldStatus(
+                        $ticket->ID,
+                        $ticket->STATUS,
+                        'System',
+                        "Automatically set to On Hold - target date {$ticket->target_date} has passed for project: {$ticket->PROJECT_NAME}"
+                    );
+
+                    // ALSO update the associated project to On Hold using the correct method
+                    if (!empty($ticket->PROJECT_NAME)) {
+                        $this->projectService->updateProjectStatus(
+                            $ticket->PROJECT_NAME,
+                            4, // PROJ_STATUS_ON_HOLD
+                            'System',
+                            [], // No additional data
+                            $ticket->TYPE_OF_REQUEST,
+                            $ticket->TICKET_ID
+                        );
+                        Log::info("✓ Also updated project {$ticket->PROJECT_NAME} to On Hold");
+                    }
+
+                    $count++;
+                    Log::info("✓ Successfully updated ticket {$ticket->TICKET_ID} to On Hold");
+                }
+            } catch (\Exception $e) {
+                Log::error("✗ Failed to update ticket {$ticket->TICKET_ID}: " . $e->getMessage());
+            }
+        }
+
+        return $count;
+    }
 }

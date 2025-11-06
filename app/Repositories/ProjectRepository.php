@@ -288,4 +288,15 @@ class ProjectRepository
             ->pluck('DEPARTMENT')
             ->toArray();
     }
+
+    public function updateProjectToOnHold($projectId): bool
+    {
+        return $this->getBaseQuery()
+            ->where('PROJ_ID', $projectId)
+            ->update([
+                'PROJ_STATUS' => 4, // PROJ_STATUS_ON_HOLD
+                'UPDATED_AT' => now(),
+                'UPDATED_BY' => 'System'
+            ]);
+    }
 }

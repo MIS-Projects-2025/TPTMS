@@ -666,4 +666,68 @@ class TicketRepository
     {
         return DB::table('ticketing')->where('TICKET_ID', $ticketId)->first();
     }
+    // Add to TicketRepository class
+
+    /**
+     * Find overdue tickets for Testing and Parallel Run requests
+     */
+    public function findOverdueTickets(): array
+    {
+        $today = now()->format('Y-m-d');
+
+        return $this->queryTickets()
+            ->whereIn('TYPE_OF_REQUEST', [5, 6]) // Testing or Parallel Run
+            ->whereNotIn('STATUS', [8, 6, 5, 7]) // Not on hold, closed, resolved, rejected
+            ->where('target_date', '<', $today)
+            ->whereNotNull('target_date')
+            ->select('ID', 'TICKET_ID', 'TYPE_OF_REQUEST', 'target_date', 'STATUS', 'PROJECT_NAME')
+            ->get()
+            ->toArray();
+    }
+
+    /**
+     * Update ticket status to On Hold
+     */
+    public function updateTicketToOnHold($ticketId): bool
+    {
+        return $this->queryTickets()
+            ->where('ID', $ticketId)
+            ->update([
+                'STATUS' => 8, // STATUS_ON_HOLD
+                'updated_at' => now()
+            ]);
+    }
+
+    /**
+     * Log automatic status change to On Hold
+     */
+    public function logAutoOnHoldStatus($ticketDbId, $oldStatus, $updatedBy, $remarks = null): void
+    {
+        try {
+            // Log in ticket_workflow table
+            DB::table('ticket_workflow')->insert([
+                'TICKET_ID' => $ticketDbId,
+                'ACTION_TYPE' => 'AUTO_ON_HOLD',
+                'ACTION_BY' => $updatedBy,
+                'ACTION_AT' => now(),
+                'REMARKS' => $remarks ?? "Status automatically changed from {$oldStatus} to 8 due to overdue target date",
+            ]);
+
+            // Log in remarks_history table
+            DB::table('remarks_history')->insert([
+                'TICKET_ID' => $ticketDbId,
+                'CREATED_BY' => $updatedBy,
+                'REMARK_TYPE' => 'SYSTEM',
+                'REMARK_TEXT' => $remarks ?? "Status automatically changed from {$oldStatus} to 8 due to overdue target date",
+                'OLD_STATUS' => $oldStatus,
+                'NEW_STATUS' => 8,
+                'IS_SYSTEM_GENERATED' => true,
+                'CREATED_AT' => now(),
+                'UPDATED_AT' => now(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Failed to log ticket status change: " . $e->getMessage());
+            throw $e;
+        }
+    }
 }
