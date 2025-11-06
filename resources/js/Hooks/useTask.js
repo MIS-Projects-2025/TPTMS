@@ -54,8 +54,8 @@ export default function useTask(tasks) {
      * Filtered and sorted tasks based on all active filters
      */
     const filteredTasks = useMemo(() => {
-        console.log("All tasks:", tasks);
-        console.log("Selected programmer:", selectedProgrammer);
+        // console.log("All tasks:", tasks);
+        // console.log("Selected programmer:", selectedProgrammer);
 
         let result = [...tasks];
 
@@ -82,14 +82,14 @@ export default function useTask(tasks) {
 
         // Programmer filter - DEBUGGING VERSION
         if (selectedProgrammer) {
-            console.log("Filtering by programmer:", selectedProgrammer);
+            // console.log("Filtering by programmer:", selectedProgrammer);
             result = result.filter((task) => {
-                console.log("Task employee data:", {
-                    id: task.id,
-                    employee_ids: task.employee_ids,
-                    employid: task.employid, // Check if it's called employid instead
-                    assigned_to: task.assigned_to, // Check other possible field names
-                });
+                // console.log("Task employee data:", {
+                //     id: task.id,
+                //     employee_ids: task.employee_ids,
+                //     employid: task.employid, // Check if it's called employid instead
+                //     assigned_to: task.assigned_to, // Check other possible field names
+                // });
 
                 // Try multiple possible field names
                 const isAssignedToProgrammer =
@@ -99,10 +99,10 @@ export default function useTask(tasks) {
                     (Array.isArray(task.employee_ids) &&
                         task.employee_ids.includes(selectedProgrammer));
 
-                console.log(
-                    "Is assigned to programmer:",
-                    isAssignedToProgrammer
-                );
+                // console.log(
+                //     "Is assigned to programmer:",
+                //     isAssignedToProgrammer
+                // );
                 return isAssignedToProgrammer;
             });
         }
@@ -128,7 +128,7 @@ export default function useTask(tasks) {
             result.sort((a, b) => a.status - b.status);
         }
 
-        console.log("Filtered result:", result);
+        // console.log("Filtered result:", result);
         return result;
     }, [
         tasks,

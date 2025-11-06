@@ -27,7 +27,7 @@ const TaskIndex = () => {
         programmers = [],
         is_supervisor,
     } = usePage().props;
-    console.log(usePage().props);
+    // console.log(usePage().props);
     const isSupervisor = is_supervisor;
     const currentUser = emp_data.emp_id;
 
@@ -45,10 +45,10 @@ const TaskIndex = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const handleCreateTask = async (data) => {
-        console.log("Creating new task with data:", data);
+        // console.log("Creating new task with data:", data);
         try {
             const response = await axios.post(route("tasks.store"), data);
-            console.log("Task creation response:", response.data);
+            // console.log("Task creation response:", response.data);
 
             if (response.data.success) {
                 message.success("Tasks created successfully!");
@@ -65,9 +65,9 @@ const TaskIndex = () => {
     };
 
     // Debug log to check what we're receiving
-    console.log("Tasks from props:", tasks);
-    console.log("Current user:", currentUser);
-    console.log(usePage().props);
+    // console.log("Tasks from props:", tasks);
+    // console.log("Current user:", currentUser);
+    // console.log(usePage().props);
 
     const {
         selectedDates,

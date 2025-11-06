@@ -37,7 +37,7 @@ export default function ProjectsTable() {
         appName,
         showAllDepartments,
     } = usePage().props;
-    console.log(usePage().props);
+    // console.log(usePage().props);
 
     const [loading, setLoading] = useState(false);
     const [searchValue, setSearchValue] = useState(
@@ -64,7 +64,7 @@ export default function ProjectsTable() {
         getStatusLabel,
         getStatusColor,
     } = useProjectConstants();
-    console.log(projectStatuses);
+    // console.log(projectStatuses);
     const encodeParams = (params) => btoa(JSON.stringify(params));
 
     // ✅ Create Ticket
@@ -158,7 +158,7 @@ export default function ProjectsTable() {
             .join(", ");
 
         return (
-            <Avatar.Group maxCount={maxCount} size="default">
+            <Avatar.Group max={maxCount} size="default">
                 {visible.map((person) => (
                     <Tooltip
                         key={person.emp_id}
@@ -332,33 +332,30 @@ export default function ProjectsTable() {
             width: 80,
             fixed: "right",
             render: (_, record) => {
-                const menu = (
-                    <Menu
-                        items={[
-                            {
-                                key: "editProject",
-                                label: "Edit Project",
-                                icon: <EditOutlined />,
-                                onClick: () => handleEditProject(record),
-                            },
-                            {
-                                key: "viewLogs",
-                                label: "View Logs",
-                                icon: <FileSearchOutlined />,
-                                onClick: () => handleViewLogs(record),
-                            },
-                            {
-                                key: "createTicket",
-                                label: "Create Ticket",
-                                icon: <PlusOutlined />,
-                                onClick: () => handleCreateTicket(record),
-                            },
-                        ]}
-                    />
-                );
+                const menuItems = [
+                    {
+                        key: "editProject",
+                        label: "Edit Project",
+                        icon: <EditOutlined />,
+                        onClick: () => handleEditProject(record),
+                    },
+                    {
+                        key: "viewLogs",
+                        label: "View Logs",
+                        icon: <FileSearchOutlined />,
+                        onClick: () => handleViewLogs(record),
+                    },
+                    {
+                        key: "createTicket",
+                        label: "Create Ticket",
+                        icon: <PlusOutlined />,
+                        onClick: () => handleCreateTicket(record),
+                    },
+                ];
+
                 return (
                     <Dropdown
-                        overlay={menu}
+                        menu={{ items: menuItems }}
                         trigger={["click"]}
                         placement="bottomRight"
                     >

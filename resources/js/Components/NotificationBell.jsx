@@ -7,7 +7,7 @@ export default function NotificationBell() {
     const dropdownRef = useRef(null);
     const { notifications, unreadCount, markAsRead, markAllAsRead } =
         useNotifications();
-    console.log(notifications);
+    // console.log(notifications);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -46,7 +46,7 @@ export default function NotificationBell() {
 
     // Handle notification click - different behavior for projects vs tickets
     const handleNotificationClick = async (notif) => {
-        console.log("Notification clicked:", notif);
+        // console.log("Notification clicked:", notif);
 
         // Parse data if it's a string
         const notifData =
@@ -70,7 +70,7 @@ export default function NotificationBell() {
 
         // Handle PROJECT notifications - just redirect to projects list
         if (isProjectNotification) {
-            console.log("Redirecting to projects list");
+            // console.log("Redirecting to projects list");
             const redirectUrl = notifData.redirect_url || route("project.list");
             window.location.href = redirectUrl;
             return;
@@ -81,7 +81,7 @@ export default function NotificationBell() {
             const ticketId = notifData.ticket_id || notif.ticket_id;
             const actionRequired =
                 notif.action_required || notifData.action_required || "VIEW";
-            console.log("Redirecting with action:", actionRequired);
+            // console.log("Redirecting with action:", actionRequired);
             const hash = btoa(`${ticketId}:${actionRequired}`);
             window.location.href = route("tickets.view", hash);
         }

@@ -48,7 +48,7 @@ export default function TicketTable() {
 
     // Function to refresh tickets from server
     const refreshTickets = () => {
-        console.log("🔄 Refreshing tickets...");
+        // console.log("🔄 Refreshing tickets...");
         router.reload({
             only: ["tickets", "pagination", "statusCounts", "filters"],
             preserveState: true,
@@ -65,10 +65,10 @@ export default function TicketTable() {
             // Get the new notifications (most recent ones)
             const newNotifications = notifications.slice(0, countDiff);
 
-            console.log("📬 New notification(s) detected:", {
-                count: countDiff,
-                newNotifications,
-            });
+            // console.log("📬 New notification(s) detected:", {
+            //     count: countDiff,
+            //     newNotifications,
+            // });
 
             // Check if any new notification is ticket-related
             const hasTicketUpdate = newNotifications.some((notif) => {
@@ -93,22 +93,22 @@ export default function TicketTable() {
                     data?.ticket_id ||
                     notif.type?.includes("Ticket");
 
-                console.log("🔍 Checking notification:", {
-                    notificationId: notif.id,
-                    type: data?.type || notif.type,
-                    isTicketRelated: isTicketNotification,
-                });
+                // console.log("🔍 Checking notification:", {
+                //     notificationId: notif.id,
+                //     type: data?.type || notif.type,
+                //     isTicketRelated: isTicketNotification,
+                // });
 
                 return isTicketNotification;
             });
 
             if (hasTicketUpdate) {
-                console.log(
-                    "🎫 Ticket-related notification detected! Refreshing table..."
-                );
+                // console.log(
+                //     "🎫 Ticket-related notification detected! Refreshing table..."
+                // );
                 refreshTickets();
             } else {
-                console.log("ℹ️ Non-ticket notification, skipping refresh");
+                // console.log("ℹ️ Non-ticket notification, skipping refresh");
             }
         }
 
@@ -117,7 +117,7 @@ export default function TicketTable() {
 
     // Determine active filter from status
     const activeFilter = filters?.status || "all";
-    console.log(activeFilter);
+    // console.log(activeFilter);
     // Update search value when filters change from URL
     useEffect(() => {
         setSearchValue(filters?.search || "");
@@ -202,7 +202,7 @@ export default function TicketTable() {
 
     // Handle status filter via stat cards
     const handleStatusFilter = (filterType) => {
-        console.log("🔄 Changing filter to:", filterType);
+        // console.log("🔄 Changing filter to:", filterType);
         setLoading(true);
 
         const params = {
@@ -215,13 +215,13 @@ export default function TicketTable() {
             sortOrder: filters?.sortOrder || "desc",
         };
 
-        console.log("📤 Sending params:", params);
+        // console.log("📤 Sending params:", params);
 
         router.get(route("tickets.datatable"), params, {
             preserveState: true,
             preserveScroll: true,
             onFinish: () => {
-                console.log("✅ Filter applied");
+                // console.log("✅ Filter applied");
                 setLoading(false);
             },
         });

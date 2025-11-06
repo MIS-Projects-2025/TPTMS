@@ -9,7 +9,7 @@ window.axios.defaults.headers.common["X-Requested-With"] = "XMLHttpRequest";
 
 // CSRF token
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-console.log("CSRF token:", csrfToken);
+// console.log("CSRF token:", csrfToken);
 
 // Laravel Echo with Reverb
 window.Pusher = Pusher;

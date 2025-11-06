@@ -46,13 +46,13 @@ export function NotificationProvider({ children, userId }) {
 
         // Subscribe to user's private channel
         const channel = echo.private(`users.${userId}`);
-        console.log(`Joining channel: users.${userId}`);
+        // console.log(`Joining channel: users.${userId}`);
 
         channelRef.current = channel;
 
         // Listen for notification events - FIXED: Use correct event name
         channel.listen(".notification.created", (notification) => {
-            console.log("Real-time notification received:", notification);
+            // console.log("Real-time notification received:", notification);
 
             // Add new notification to the list
             setNotifications((prev) => {
@@ -78,7 +78,7 @@ export function NotificationProvider({ children, userId }) {
         // Connection event handlers
         channel
             .subscribed(() => {
-                console.log(`✅ Subscribed to users.${userId}`);
+                // console.log(`✅ Subscribed to users.${userId}`);
                 setIsConnected(true);
             })
             .error((error) => {
@@ -88,7 +88,7 @@ export function NotificationProvider({ children, userId }) {
 
         // Cleanup on unmount - FIXED: Use channelRef
         return () => {
-            console.log(`Leaving channel: users.${userId}`);
+            // console.log(`Leaving channel: users.${userId}`);
             if (channelRef.current) {
                 channelRef.current.stopListening(".notification.created");
                 echo.leave(`users.${userId}`);

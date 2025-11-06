@@ -266,7 +266,7 @@ const AttachmentUpload = ({
 
             {/* Image preview modal */}
             <Modal
-                visible={previewVisible}
+                open={previewVisible}
                 footer={null}
                 onCancel={() => setPreviewVisible(false)}
                 centered

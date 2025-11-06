@@ -6,7 +6,7 @@ import { NotificationProvider } from "@/Context/NotificationContext";
 
 export default function AuthenticatedLayout({ children }) {
     const { props } = usePage(); // get emp_data
-    console.log(props);
+    // console.log(props);
 
     if (!props.emp_data) {
         return <LoadingScreen text="Loading user data..." />;

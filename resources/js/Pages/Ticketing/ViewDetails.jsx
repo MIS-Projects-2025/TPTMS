@@ -24,8 +24,8 @@ const ViewDetails = () => {
         testerInfo = [],
         userRoles = [],
     } = usePage().props;
-    console.log(usePage().props);
-    console.log(ticket);
+    // console.log(usePage().props);
+    // console.log(ticket);
 
     if (!ticket) return <div>No ticket data found</div>;
     const isResubmitAllowed =

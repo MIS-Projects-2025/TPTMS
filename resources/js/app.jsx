@@ -1,3 +1,4 @@
+import React from "react";
 import "../css/app.css";
 import "./bootstrap";
 
@@ -23,32 +24,31 @@ createInertiaApp({
     setup({ el, App, props }) {
         const root = createRoot(el);
 
-        // Get userId from shared props
         const userId =
             props.initialPage?.props?.emp_data?.emp_id ||
             props.initialPage?.props?.auth?.emp_data?.emp_id;
 
-        console.log("App userId:", userId);
-
         root.render(
-            <ThemeProvider>
-                <ThemeContext.Consumer>
-                    {({ theme }) => (
-                        <ConfigProvider
-                            theme={{
-                                algorithm:
-                                    theme === "dark"
-                                        ? antdTheme.darkAlgorithm
-                                        : antdTheme.defaultAlgorithm,
-                            }}
-                        >
-                            <NotificationProvider userId={userId}>
-                                <App {...props} />
-                            </NotificationProvider>
-                        </ConfigProvider>
-                    )}
-                </ThemeContext.Consumer>
-            </ThemeProvider>
+            <React.StrictMode>
+                <ThemeProvider>
+                    <ThemeContext.Consumer>
+                        {({ theme }) => (
+                            <ConfigProvider
+                                theme={{
+                                    algorithm:
+                                        theme === "dark"
+                                            ? antdTheme.darkAlgorithm
+                                            : antdTheme.defaultAlgorithm,
+                                }}
+                            >
+                                <NotificationProvider userId={userId}>
+                                    <App {...props} />
+                                </NotificationProvider>
+                            </ConfigProvider>
+                        )}
+                    </ThemeContext.Consumer>
+                </ThemeProvider>
+            </React.StrictMode>
         );
     },
 });
