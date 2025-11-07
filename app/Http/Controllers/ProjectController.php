@@ -16,7 +16,39 @@ class ProjectController extends Controller
     {
         $this->projectService = $projectService;
     }
+    public function store(Request $request)
+    {
+        try {
+            $empData = session('emp_data');
+            if (!$empData) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
 
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'description' => 'required|string',
+                'department' => 'required|string|max:100',
+                'handler_ids' => 'required|array',
+                'handler_ids.*' => 'string|max:20',
+                'target_deadline' => 'nullable|date',
+                'status' => 'required|integer',
+            ]);
+
+            // Create the project using ProjectService
+            $projectId = $this->projectService->createProject(
+                $validated,
+                $empData['emp_id']
+            );
+
+            return redirect()->route('project.list')
+                ->with('success', 'Project created successfully');
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create project: ' . $e->getMessage()
+            ], 500);
+        }
+    }
     public function getProjectsDataTable(Request $request)
     {
         $empData = session('emp_data');

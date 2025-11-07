@@ -7,11 +7,14 @@ use App\Http\Middleware\AuthMiddleware;
 $app_name = $app_name ?? env('APP_NAME', 'app');
 
 Route::prefix($app_name)
-    ->middleware(AuthMiddleware::class) // ✅ Middleware applied here
+    ->middleware(AuthMiddleware::class)
     ->group(function () {
 
         Route::get('/projects/datatable', [ProjectController::class, 'getProjectsDataTable'])
             ->name('project.list');
+
+        // Add the store route for creating projects
+        Route::post('/projects', [ProjectController::class, 'store'])->name('project.store');
 
         // Excel Import Routes
         Route::post('/projectList/import', [ProjectController::class, 'importExcel'])->name('project.import');

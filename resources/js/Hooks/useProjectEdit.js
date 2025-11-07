@@ -5,7 +5,13 @@ import axios from "axios";
 import dayjs from "dayjs";
 import useProjectConstants from "@/Hooks/useProjectConstants";
 
-export default function useProjectEdit(isOpen, project, form, onClose) {
+export default function useProjectEdit(
+    isOpen,
+    project,
+    form,
+    onClose,
+    mode = "edit"
+) {
     const [loading, setLoading] = useState(false);
     const [handlerOptions, setHandlerOptions] = useState([]);
     const [loadingHandlers, setLoadingHandlers] = useState(false);
@@ -20,31 +26,53 @@ export default function useProjectEdit(isOpen, project, form, onClose) {
     } = useProjectConstants();
 
     useEffect(() => {
-        if (isOpen && project) {
-            fetchDepartments();
+        if (isOpen) {
+            fetchDepartments().then((departments) => {
+                if (mode === "edit" && project) {
+                    // Edit mode - populate form with project data
+                    const currentHandlers = project.proj_handler || [];
+                    fetchHandlers(project.department, currentHandlers);
 
-            const currentHandlers = project.proj_handler || [];
-            fetchHandlers(project.department, currentHandlers);
+                    const initialStatusValue =
+                        projectStatuses?.find((s) => s.label === project.status)
+                            ?.value || 1;
 
-            const initialStatusValue =
-                projectStatuses?.find((s) => s.label === project.status)
-                    ?.value || 1;
+                    form.setFieldsValue({
+                        name: project.name,
+                        description: project.description,
+                        department: project.department,
+                        handlers: currentHandlers.map((h) => h.emp_id),
+                        assigned_to: project.assigned_to?.emp_id || null,
+                        target_deadline: project.target_deadline
+                            ? dayjs(project.target_deadline)
+                            : null,
+                        status: initialStatusValue,
+                    });
+                } else {
+                    // Create mode - set default values
+                    form.resetFields();
 
-            form.setFieldsValue({
-                name: project.name,
-                description: project.description,
-                department: project.department,
-                handlers: currentHandlers.map((h) => h.emp_id),
-                assigned_to: project.assigned_to?.emp_id || null,
-                target_deadline: project.target_deadline
-                    ? dayjs(project.target_deadline)
-                    : null,
-                status: initialStatusValue,
+                    // Set default department (first one) and load its handlers
+                    if (departments && departments.length > 0) {
+                        const defaultDepartment = departments[0];
+                        form.setFieldsValue({
+                            department: defaultDepartment,
+                            status: 1, // Default status for new projects
+                        });
+                        // Load handlers for the default department
+                        fetchHandlers(defaultDepartment, []);
+                    }
+                }
             });
         }
-    }, [isOpen, project, projectStatuses]);
+    }, [isOpen, project, projectStatuses, mode]);
 
     const fetchHandlers = async (department, currentHandlers = []) => {
+        if (!department) {
+            setHandlerOptions([]);
+            return;
+        }
+
         setLoadingHandlers(true);
         try {
             const res = await axios.get(`/api/projects/handlers/${department}`);
@@ -86,50 +114,82 @@ export default function useProjectEdit(isOpen, project, form, onClose) {
         try {
             const res = await axios.get("/api/departments");
             if (res.data.success) {
-                setDepartmentOptions(res.data.departments);
+                const departments = res.data.departments;
+                setDepartmentOptions(departments);
+                return departments; // Return departments for the promise chain
             }
+            return []; // Return empty array if no success
         } catch (error) {
             console.error("Error fetching departments:", error);
+            return []; // Return empty array on error
         }
     };
 
-    // ✅ Updated handleSubmit with Day.js conversion
     const handleSubmit = async (values) => {
         setLoading(true);
 
         // Convert Day.js objects to string before sending
         const payload = {
-            ...values,
-            handler_ids: values.handlers || [], // ✅ Laravel expects this
+            name: values.name,
+            description: values.description,
+            department: values.department,
+            handler_ids: values.handlers || [],
+            status: values.status,
             target_deadline:
                 values.target_deadline && dayjs.isDayjs(values.target_deadline)
                     ? values.target_deadline.format("YYYY-MM-DD")
                     : values.target_deadline,
         };
 
-        console.log("Submitting payload:", payload);
+        // console.log("Submitting payload:", payload);
 
         try {
-            router.patch(
-                route("project.update", { project: project.id }),
-                payload,
-                {
+            if (mode === "create") {
+                // Create new project
+                router.post(route("project.store"), payload, {
                     preserveState: true,
                     onSuccess: () => {
-                        message.success("Project updated successfully!");
-                        handleClose(); // closes drawer
+                        message.success("Project created successfully!");
+                        handleClose();
                     },
                     onError: (errors) => {
+                        console.error("Backend errors:", errors);
                         const errorMessage =
                             Object.values(errors).flat().join(", ") ||
-                            "Failed to update project";
+                            "Failed to create project";
                         message.error(errorMessage);
                     },
                     onFinish: () => setLoading(false),
-                }
-            );
+                });
+            } else {
+                // Update existing project
+                router.patch(
+                    route("project.update", { project: project.id }),
+                    payload,
+                    {
+                        preserveState: true,
+                        onSuccess: () => {
+                            message.success("Project updated successfully!");
+                            handleClose();
+                        },
+                        onError: (errors) => {
+                            console.error("Backend errors:", errors);
+                            const errorMessage =
+                                Object.values(errors).flat().join(", ") ||
+                                "Failed to update project";
+                            message.error(errorMessage);
+                        },
+                        onFinish: () => setLoading(false),
+                    }
+                );
+            }
         } catch (error) {
-            message.error("An error occurred while updating project");
+            console.error("Frontend error:", error);
+            message.error(
+                `An error occurred while ${
+                    mode === "create" ? "creating" : "updating"
+                } project`
+            );
             setLoading(false);
         }
     };
@@ -192,5 +252,6 @@ export default function useProjectEdit(isOpen, project, form, onClose) {
         handleClose,
         handleDepartmentChange,
         getColorFromString,
+        mode,
     };
 }

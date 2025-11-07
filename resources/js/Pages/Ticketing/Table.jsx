@@ -406,12 +406,14 @@ export default function TicketTable() {
             dataIndex: "type_of_request",
             key: "type_of_request",
             width: 150,
+            sorter: true,
         },
         {
             title: "Status",
             dataIndex: "status",
             key: "status",
             width: 100,
+            sorter: true,
             render: (status) => {
                 const colorMap = {
                     New: "blue",
@@ -438,7 +440,7 @@ export default function TicketTable() {
         {
             title: "Actions",
             key: "actions",
-            width: 220,
+            width: 100,
             render: (_, record) => renderActions(_, record),
         },
     ];

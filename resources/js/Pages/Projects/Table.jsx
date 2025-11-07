@@ -1,4 +1,4 @@
-import React, { use, useState } from "react";
+import React, { useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import {
     Table,
@@ -11,6 +11,7 @@ import {
     Dropdown,
     Menu,
     Alert,
+    message,
 } from "antd";
 import {
     UserOutlined,
@@ -36,8 +37,8 @@ export default function ProjectsTable() {
         departments,
         appName,
         showAllDepartments,
+        emp_data,
     } = usePage().props;
-    // console.log(usePage().props);
 
     const [loading, setLoading] = useState(false);
     const [searchValue, setSearchValue] = useState(
@@ -48,6 +49,10 @@ export default function ProjectsTable() {
     const [showLogsModal, setShowLogsModal] = useState(false);
     const [showEditDrawer, setShowEditDrawer] = useState(false);
     const [selectedProject, setSelectedProject] = useState(null);
+    const [drawerMode, setDrawerMode] = useState("edit"); // 'edit' or 'create'
+
+    // Check if user is programmer
+    const isProgrammer = emp_data?.emp_system_role === "Programmer";
 
     const {
         projectLogs,
@@ -64,7 +69,7 @@ export default function ProjectsTable() {
         getStatusLabel,
         getStatusColor,
     } = useProjectConstants();
-    // console.log(projectStatuses);
+
     const encodeParams = (params) => btoa(JSON.stringify(params));
 
     // ✅ Create Ticket
@@ -72,6 +77,28 @@ export default function ProjectsTable() {
         const params = new URLSearchParams();
         params.set("project", btoa(project.name));
         window.location.href = `${route("tickets")}?${params.toString()}`;
+    };
+
+    // 🆕 Create Project - Only for programmers
+    const handleCreateProject = () => {
+        if (!isProgrammer) {
+            message.warning("You don't have permission to create projects");
+            return;
+        }
+        setSelectedProject(null);
+        setDrawerMode("create");
+        setShowEditDrawer(true);
+    };
+
+    // ✏️ Edit Project - Only for programmers
+    const handleEditProject = (project) => {
+        if (!isProgrammer) {
+            message.warning("You don't have permission to edit projects");
+            return;
+        }
+        setSelectedProject(project);
+        setDrawerMode("edit");
+        setShowEditDrawer(true);
     };
 
     // 🔍 Search
@@ -137,11 +164,6 @@ export default function ProjectsTable() {
         setSelectedProject(project);
         setShowLogsModal(true);
         fetchProjectLogs(project.id, 1);
-    };
-
-    const handleEditProject = (project) => {
-        setSelectedProject(project);
-        setShowEditDrawer(true);
     };
 
     // Render avatar group helper
@@ -333,12 +355,17 @@ export default function ProjectsTable() {
             fixed: "right",
             render: (_, record) => {
                 const menuItems = [
-                    {
-                        key: "editProject",
-                        label: "Edit Project",
-                        icon: <EditOutlined />,
-                        onClick: () => handleEditProject(record),
-                    },
+                    // Only show Edit Project for programmers
+                    ...(isProgrammer
+                        ? [
+                              {
+                                  key: "editProject",
+                                  label: "Edit Project",
+                                  icon: <EditOutlined />,
+                                  onClick: () => handleEditProject(record),
+                              },
+                          ]
+                        : []),
                     {
                         key: "viewLogs",
                         label: "View Logs",
@@ -370,7 +397,10 @@ export default function ProjectsTable() {
     ];
 
     return (
-        <ProjectLayout>
+        <ProjectLayout
+            onCreateProject={handleCreateProject}
+            isProgrammer={isProgrammer}
+        >
             <ProjectNavbar
                 searchValue={searchValue}
                 onSearch={handleSearch}
@@ -378,6 +408,7 @@ export default function ProjectsTable() {
                 onDepartmentChange={handleDepartmentChange}
                 setShowImportModal={setShowImportModal}
                 showAllDepartments={showAllDepartments}
+                onCreateProject={isProgrammer ? handleCreateProject : null}
             />
 
             <Spin spinning={loading}>
@@ -425,12 +456,14 @@ export default function ProjectsTable() {
                 projectName={selectedProject?.name}
             />
 
+            {/* ✏️ Create/Edit Project Drawer */}
             <ProjectEditDrawer
                 isOpen={showEditDrawer}
                 onClose={() => setShowEditDrawer(false)}
                 project={selectedProject}
+                mode={drawerMode}
                 onUpdated={() => {
-                    // Refetch table data after edit
+                    // Refetch table data after edit/create
                     const encoded = encodeParams(filters);
                     setLoading(true);
                     router.get(

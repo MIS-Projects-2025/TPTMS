@@ -346,6 +346,28 @@ class DashboardController extends Controller
 
     private function getExecutiveData($empData)
     {
+        $tickets = DB::table('tickets')
+            ->select('EMPLOYID')
+            ->get();
+
+        $employees = DB::connection('masterlist')
+            ->table('employee_masterlist')
+            ->select('EMPLOYID', 'DEPARTMENT')
+            ->get();
+        // Convert tickets to a simple array of EMPLOYIDs
+        $ticketEmpIds = $tickets->pluck('EMPLOYID')->toArray();
+
+        // Filter employees who have tickets
+        $employeesWithTickets = $employees->filter(function ($emp) use ($ticketEmpIds) {
+            return in_array($emp->EMPLOYID, $ticketEmpIds);
+        });
+
+        // Group by department
+        $departmentBreakdown = $employeesWithTickets
+            ->groupBy('DEPARTMENT')
+            ->map(fn($group) => count($group))
+            ->toArray();
+
         return [
             'all_tickets' => DB::table('tickets')
                 ->orderBy('CREATED_AT', 'desc')
@@ -356,14 +378,12 @@ class DashboardController extends Controller
                 ->limit(15)
                 ->get(),
             'performance_metrics' => [
-                'avg_resolution_time' => 'Calculated metric', // You can implement this
-                'sla_compliance' => 'Calculated metric', // You can implement this
-                'department_breakdown' => DB::table('tickets')
-                    ->join('employee_masterlist', 'tickets.EMPLOYID', '=', 'employee_masterlist.EMPLOYID')
-                    ->select('employee_masterlist.DEPARTMENT', DB::raw('COUNT(*) as count'))
-                    ->groupBy('employee_masterlist.DEPARTMENT')
-                    ->get(),
+                'avg_resolution_time' => 'Calculated metric',
+                'sla_compliance' => 'Calculated metric',
+                'department_breakdown' => $departmentBreakdown,
             ],
+
+
         ];
     }
 

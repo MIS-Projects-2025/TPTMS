@@ -30,7 +30,6 @@ class AuthMiddleware
                 $redirectUrl = urlencode($request->fullUrl());
                 return redirect("http://192.168.2.221/authify/public/login?redirect={$redirectUrl}");
             }
-
             // ✅ Access control
             $canAccess = false;
 
@@ -38,7 +37,6 @@ class AuthMiddleware
             if ($currentUser->emp_position > 2) {
                 $canAccess = true;
             }
-
             // 2. Allow if emp_id is PROJ_HANDLER
             if (!$canAccess) {
                 $isHandler = DB::connection('projects')->table('project_list') // Adjust table/connection if needed
@@ -49,7 +47,6 @@ class AuthMiddleware
                     $canAccess = true;
                 }
             }
-
             // 3. Allow if job title contains "Programmer"
             if (
                 stripos($currentUser->emp_jobtitle, 'programmer') !== false ||
@@ -71,11 +68,9 @@ class AuthMiddleware
                 // Show warning page before redirect
                 return Inertia::render('Unauthorized', [
                     'logoutUrl' => $authifyUrl,
-                    'message' => 'Access Restricted: You do not have permission to access the ticketing system.',
+                    'message' => 'Access Restricted: You do not have permission to access the TPTMS.',
                 ]);
             }
-
-
 
             // ✅ Assign system role if Programmer
             $systemRole = null;

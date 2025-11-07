@@ -29,7 +29,7 @@ export default function Unauthorized({ message, logoutUrl }) {
                     className="btn btn-soft btn-primary mt-4"
                     onClick={() => (window.location.href = logoutUrl)}
                 >
-                    Logout Now
+                    Go Back
                 </button>
             </div>
         </div>

@@ -5,9 +5,27 @@ import ThemeToggler from "@/Components/sidebar/ThemeToggler";
 import { ThemeContext } from "@/Components/ThemeContext";
 import NavBar from "@/Components/NavBar";
 
-export default function ProjectLayout({ children }) {
+export default function ProjectLayout({
+    children,
+    onCreateProject,
+    isProgrammer,
+}) {
     const { theme, toggleTheme } = useContext(ThemeContext);
     const [isSidebarOpen] = useState(true);
+
+    const handleNewProjectClick = () => {
+        if (isProgrammer) {
+            // If programmer, open the create drawer
+            onCreateProject();
+        } else {
+            // If not programmer, redirect to tickets
+            const newEncoded = btoa("new");
+            const params = new URLSearchParams({
+                action: newEncoded,
+            });
+            window.location.href = `${route("tickets")}?${params.toString()}`;
+        }
+    };
 
     return (
         <div className="flex h-screen bg-base-200">
@@ -28,21 +46,15 @@ export default function ProjectLayout({ children }) {
                         </h2>
                         <button
                             className="btn btn-primary btn-sm w-full flex items-center gap-2 justify-center"
-                            onClick={() => {
-                                // Encode parameters
-                                const newEncoded = btoa("new"); // only passing 'new'
-                                const params = new URLSearchParams({
-                                    action: newEncoded,
-                                });
-
-                                // Redirect to tickets route with encoded query
-                                window.location.href = `${route(
-                                    "tickets"
-                                )}?${params.toString()}`;
-                            }}
+                            onClick={handleNewProjectClick}
+                            title={
+                                isProgrammer
+                                    ? "Create new project"
+                                    : "Create new ticket"
+                            }
                         >
                             <PlusCircle className="w-4 h-4" />
-                            New Project
+                            {isProgrammer ? "New Project" : "New Ticket"}
                         </button>
                     </div>
                 </div>

@@ -22,7 +22,40 @@ class ProjectService
         $this->notificationService = $notificationService;
         $this->statusMapping = ProjectConstants::getStatusMapping();
     }
+    public function createProject(array $data, $createdBy)
+    {
+        // Check if project with same name already exists
+        $existingProject = $this->projectRepository->getProjectByName($data['name']);
+        if ($existingProject) {
+            throw new \Exception("Project with name '{$data['name']}' already exists");
+        }
 
+        $projectData = [
+            'PROJ_NAME' => $data['name'],
+            'PROJ_DESC' => $data['description'],
+            'PROJ_DEPT' => $data['department'],
+            'PROJ_HANDLER' => !empty($data['handler_ids']) ? implode(',', $data['handler_ids']) : null,
+            'PROJ_STATUS' => $data['status'],
+            'TARGET_DEADLINE' => $data['target_deadline'] ?? null,
+            'CREATED_BY' => $createdBy,
+            'CREATED_AT' => now(),
+            'UPDATED_BY' => $createdBy,
+            'UPDATED_AT' => now(),
+        ];
+
+        $projectId = $this->projectRepository->createProject($projectData);
+
+        // Log the creation action
+        $this->logAction(
+            $projectId,
+            'CREATED',
+            'Project created',
+            null,
+            $createdBy
+        );
+
+        return $projectId;
+    }
     public function getProjectsDataTable($request)
     {
         $filters = [

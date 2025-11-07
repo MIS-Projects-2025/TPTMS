@@ -5,20 +5,20 @@ import { usePage } from "@inertiajs/react";
 import { NotificationProvider } from "@/Context/NotificationContext";
 
 export default function AuthenticatedLayout({ children }) {
-    const { props } = usePage(); // get emp_data
+    const { emp_data } = usePage().props; // get emp_data
     // console.log(props);
 
-    if (!props.emp_data) {
+    if (!emp_data) {
         return <LoadingScreen text="Loading user data..." />;
     }
 
     return (
-        <NotificationProvider userId={props.emp_data.emp_id}>
+        <NotificationProvider userId={emp_data.emp_id}>
             <div className="flex h-screen overflow-hidden">
                 <Sidebar /> {/* vertical sidebar */}
                 <div className="flex-1 flex flex-col min-w-0">
                     <NavBar /> {/* top navbar */}
-                    <main className="flex-1 px-4 sm:px-6 py-6 pb-[70px] overflow-y-auto">
+                    <main className="flex-1 px-2 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 pb-[70px] overflow-y-auto">
                         {children}
                     </main>
                 </div>

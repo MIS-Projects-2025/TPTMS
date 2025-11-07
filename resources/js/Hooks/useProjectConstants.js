@@ -64,50 +64,62 @@ export default function useProjectConstants() {
     const [error, setError] = useState(null);
 
     useEffect(() => {
+        let isMounted = true;
+
+        // If we already have cached data
         if (constantsCache) {
             setConstants(constantsCache);
             setLoading(false);
             return;
         }
 
+        // If there’s already a fetch in progress, attach to it
         if (fetchPromise) {
             fetchPromise
-                .then((data) => setConstants(data))
-                .catch((err) => setError(err))
-                .finally(() => setLoading(false));
+                .then((data) => isMounted && setConstants(data))
+                .catch((err) => isMounted && setError(err))
+                .finally(() => isMounted && setLoading(false));
             return;
         }
 
+        // Otherwise, fetch new data
         const controller = new AbortController();
-
         fetchPromise = axios
             .get("/api/project-constants", { signal: controller.signal })
             .then((response) => {
-                if (response.data.success) {
+                if (response.data?.success && response.data?.data) {
                     const normalized = normalizeConstants(response.data.data);
                     constantsCache = normalized;
-                    setConstants(normalized);
+                    if (isMounted) setConstants(normalized);
                     return normalized;
                 } else {
                     throw new Error("Failed to fetch project constants");
                 }
             })
             .catch((err) => {
-                console.error(
-                    "Error fetching project constants:",
-                    err.response?.data || err.message || err
-                );
-                setError(err);
-                constantsCache = FALLBACK_CONSTANTS;
-                setConstants(FALLBACK_CONSTANTS);
-                return FALLBACK_CONSTANTS;
+                if (!axios.isCancel(err)) {
+                    console.error(
+                        "Error fetching project constants:",
+                        err.response?.data || err.message || err
+                    );
+                    const fallback = FALLBACK_CONSTANTS;
+                    constantsCache = fallback;
+                    if (isMounted) {
+                        setError(err);
+                        setConstants(fallback);
+                    }
+                    return fallback;
+                }
             })
             .finally(() => {
-                setLoading(false);
                 fetchPromise = null;
+                if (isMounted) setLoading(false);
             });
 
-        return () => controller.abort();
+        return () => {
+            isMounted = false;
+            // Do NOT abort the shared request to avoid cancel conflicts
+        };
     }, []);
 
     return {

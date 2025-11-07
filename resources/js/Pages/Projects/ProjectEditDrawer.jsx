@@ -20,6 +20,7 @@ import {
     CalendarOutlined,
     SaveOutlined,
     EditOutlined,
+    PlusOutlined,
     TagOutlined,
     InfoCircleOutlined,
 } from "@ant-design/icons";
@@ -31,7 +32,13 @@ import useProjectEdit from "@/Hooks/useProjectEdit";
 const { TextArea } = Input;
 const { Option } = Select;
 
-export default function ProjectEditDrawer({ isOpen, onClose, project }) {
+export default function ProjectEditDrawer({
+    isOpen,
+    onClose,
+    project,
+    mode = "edit",
+    onSuccess,
+}) {
     const [form] = Form.useForm();
 
     const {
@@ -48,18 +55,24 @@ export default function ProjectEditDrawer({ isOpen, onClose, project }) {
         handleClose,
         handleDepartmentChange,
         getColorFromString,
-    } = useProjectEdit(isOpen, project, form, onClose);
+        mode: drawerMode,
+    } = useProjectEdit(isOpen, project, form, onClose, mode);
+    // console.log(handlerOptions, "handlerOptions");
 
-    // const currentStatus = projectStatuses?.find(
-    //     (status) => status.label === project.status
-    // );
+    const isCreateMode = drawerMode === "create";
 
     return (
         <Drawer
             title={
                 <div className="flex items-center gap-2">
-                    <EditOutlined className="text-blue-500" />
-                    <span>Edit Project</span>
+                    {isCreateMode ? (
+                        <PlusOutlined className="text-green-500" />
+                    ) : (
+                        <EditOutlined className="text-blue-500" />
+                    )}
+                    <span>
+                        {isCreateMode ? "Create New Project" : "Edit Project"}
+                    </span>
                 </div>
             }
             placement="right"
@@ -71,11 +84,13 @@ export default function ProjectEditDrawer({ isOpen, onClose, project }) {
                     <Button onClick={handleClose}>Cancel</Button>
                     <Button
                         type="primary"
-                        icon={<SaveOutlined />}
+                        icon={
+                            isCreateMode ? <PlusOutlined /> : <SaveOutlined />
+                        }
                         onClick={() => form.submit()}
                         loading={loading}
                     >
-                        Update Project
+                        {isCreateMode ? "Create Project" : "Update Project"}
                     </Button>
                 </div>
             }
@@ -91,7 +106,7 @@ export default function ProjectEditDrawer({ isOpen, onClose, project }) {
                 />
             )}
 
-            {project && (
+            {!isCreateMode && project && (
                 <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
                     <h3 className="font-semibold text-lg mb-2 text-gray-800">
                         Project Details
@@ -126,6 +141,11 @@ export default function ProjectEditDrawer({ isOpen, onClose, project }) {
                 layout="vertical"
                 onFinish={handleSubmit}
                 className="mt-4"
+                initialValues={
+                    isCreateMode
+                        ? { status: 1 } // Set default status for create mode
+                        : {} // For edit mode, values are set in useEffect
+                }
             >
                 <Row gutter={16}>
                     <Col span={12}>
@@ -291,71 +311,6 @@ export default function ProjectEditDrawer({ isOpen, onClose, project }) {
                         />
                     )}
                 </Form.Item>
-
-                {/* Current Information Display
-                <div className="mt-6 space-y-4">
-                    {project?.proj_handler?.length > 0 && (
-                        <div className="p-3 bg-blue-50 rounded border border-blue-200">
-                            <p className="text-sm font-semibold text-blue-800 mb-2">
-                                Current Handlers:
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                                {project.proj_handler.map((handler) => (
-                                    <Tag
-                                        key={handler.emp_id}
-                                        color="blue"
-                                        icon={
-                                            <Avatar
-                                                size={16}
-                                                style={{
-                                                    backgroundColor:
-                                                        getColorFromString(
-                                                            handler.emp_id
-                                                        ),
-                                                    marginRight: 4,
-                                                }}
-                                            >
-                                                {handler.initials}
-                                            </Avatar>
-                                        }
-                                    >
-                                        {handler.full_name}
-                                    </Tag>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {project?.target_deadline && (
-                        <div className="p-3 bg-green-50 rounded border border-green-200">
-                            <p className="text-sm text-green-800">
-                                <CalendarOutlined className="mr-2" />
-                                Current Deadline:{" "}
-                                <strong>
-                                    {dayjs(project.target_deadline).format(
-                                        "MMM DD, YYYY"
-                                    )}
-                                </strong>
-                            </p>
-                        </div>
-                    )}
-                    {currentStatus ? (
-                        <div className="p-3 bg-purple-50 rounded border border-purple-200">
-                            <p className="text-sm text-purple-800">
-                                <TagOutlined className="mr-2" />
-                                Current Status: {currentStatus.label}
-                                <Tag
-                                    color={currentStatus.color}
-                                    className="ml-2"
-                                >
-                                    {currentStatus.label}
-                                </Tag>
-                            </p>
-                        </div>
-                    ) : (
-                        <p>Status Unknown</p>
-                    )}
-                </div> */}
             </Form>
         </Drawer>
     );
