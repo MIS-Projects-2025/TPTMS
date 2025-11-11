@@ -12,6 +12,7 @@ export default function TaskLayout({
     children,
     selectedDates,
     selectedProgrammer,
+    selectedStatus,
     onDateChange,
     onFilterStatus,
     onProgrammerChange,
@@ -82,32 +83,18 @@ export default function TaskLayout({
                         )}
 
                         {/* Status filters */}
-                        <button
-                            className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={() => onFilterStatus(1)}
+                        <Select
+                            placeholder="Filter by Status"
+                            value={selectedStatus || undefined} // You need a selectedStatus state in parent
+                            onChange={onFilterStatus}
+                            allowClear
+                            className="w-full"
+                            suffixIcon={<Filter className="w-4 h-4" />}
                         >
-                            <Filter className="w-4 h-4" /> Pending
-                        </button>
-                        <button
-                            className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={() => onFilterStatus(2)}
-                        >
-                            <Filter className="w-4 h-4" /> In Progress
-                        </button>
-                        <button
-                            className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={() => onFilterStatus(3)}
-                        >
-                            <Filter className="w-4 h-4" /> Completed
-                        </button>
-
-                        {/* Reset Filters */}
-                        <button
-                            className="btn btn-sm btn-outline w-full flex items-center gap-2 justify-start"
-                            onClick={onResetFilters}
-                        >
-                            <RefreshCcw className="w-4 h-4" /> Reset Filters
-                        </button>
+                            <Option value={1}>Pending</Option>
+                            <Option value={2}>In Progress</Option>
+                            <Option value={3}>Completed</Option>
+                        </Select>
                     </div>
                 </div>
 

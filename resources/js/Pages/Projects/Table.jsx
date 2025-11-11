@@ -17,7 +17,6 @@ import {
     MoreOutlined,
     EditOutlined,
     LeftOutlined,
-    PlusCircleOutlined,
 } from "@ant-design/icons";
 import { Link } from "@inertiajs/react";
 import ProjectNavbar from "@/Components/ProjectNavbar";
@@ -462,7 +461,7 @@ export default function ProjectsTable() {
             {/* Enhanced Navbar with all controls */}
             <div className="flex flex-col gap-4 mb-6">
                 {/* Top Row: Back button and New Project/Ticket button */}
-                <div className="flex items-center justify-between bg-base-100 px-5 py-3 rounded-xl shadow-sm border border-base-300">
+                <div className="flex items-center justify-between  px-5 py-3 ">
                     <Link
                         href="/"
                         className="flex items-center gap-2 btn btn-outline btn-sm"
@@ -470,19 +469,6 @@ export default function ProjectsTable() {
                         <LeftOutlined style={{ width: 16, height: 16 }} />
                         Back to Main
                     </Link>
-
-                    <button
-                        className="btn btn-primary btn-sm flex items-center gap-2"
-                        onClick={handleNewProjectClick}
-                        title={
-                            isProgrammer
-                                ? "Create new project"
-                                : "Create new ticket"
-                        }
-                    >
-                        <PlusCircleOutlined style={{ width: 16, height: 16 }} />
-                        {isProgrammer ? "New Project" : "New Ticket"}
-                    </button>
                 </div>
 
                 {/* Enhanced ProjectNavbar with additional filters */}
@@ -493,7 +479,8 @@ export default function ProjectsTable() {
                     onDepartmentChange={handleDepartmentChange}
                     setShowImportModal={setShowImportModal}
                     showAllDepartments={showAllDepartments}
-                    onCreateProject={isProgrammer ? handleCreateProject : null}
+                    isProgrammer={isProgrammer}
+                    handleNewProjectClick={handleNewProjectClick}
                     // New props for additional filtering
                     assignedPeople={getAssignedPeopleOptions()}
                     statusCounts={statusCounts}

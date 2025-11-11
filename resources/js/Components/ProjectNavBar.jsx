@@ -1,6 +1,7 @@
 import React from "react";
 import { Input, Select, Tooltip, Badge } from "antd";
 import { FileSpreadsheet } from "lucide-react";
+import { PlusCircleOutlined } from "@ant-design/icons";
 
 const { Option } = Select;
 
@@ -11,7 +12,8 @@ export default function ProjectNavbar({
     onDepartmentChange,
     setShowImportModal,
     showAllDepartments,
-    onCreateProject,
+    isProgrammer,
+    handleNewProjectClick,
     // New props for additional filtering
     assignedPeople,
     statusCounts,
@@ -118,11 +120,29 @@ export default function ProjectNavbar({
                 <div className="flex items-center gap-2">
                     <Tooltip title="Import Excel File">
                         <button
-                            className="btn btn-success flex items-center gap-2 px-4 py-2 text-white rounded-lg shadow-sm hover:opacity-90"
+                            className="btn flex items-center gap-2 px-4 py-2 h-10 rounded-lg text-white shadow-sm hover:opacity-90 bg-green-500"
                             onClick={() => setShowImportModal(true)}
                         >
                             <FileSpreadsheet size={18} />
                             Import Excel
+                        </button>
+                    </Tooltip>
+
+                    <Tooltip
+                        title={
+                            isProgrammer
+                                ? "Create new project"
+                                : "Create new ticket"
+                        }
+                    >
+                        <button
+                            className="btn flex items-center gap-2 px-4 py-2 h-10 rounded-lg text-white shadow-sm hover:opacity-90 bg-blue-600"
+                            onClick={handleNewProjectClick}
+                        >
+                            <PlusCircleOutlined
+                                style={{ width: 16, height: 16 }}
+                            />
+                            {isProgrammer ? "New Project" : "New Ticket"}
                         </button>
                     </Tooltip>
                 </div>

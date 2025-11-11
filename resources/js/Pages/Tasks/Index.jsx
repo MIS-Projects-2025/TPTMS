@@ -1,5 +1,5 @@
 import React, { use, useState } from "react";
-import { usePage, router } from "@inertiajs/react";
+import { usePage, router, Link } from "@inertiajs/react";
 import { Modal, message, Alert, Button } from "antd";
 import {
     CheckCircleOutlined,
@@ -8,6 +8,7 @@ import {
     CloseCircleOutlined,
     HistoryOutlined,
     CommentOutlined,
+    LeftOutlined,
 } from "@ant-design/icons";
 import TaskLayout from "@/Layouts/TaskLayout";
 import TaskNavbar from "@/Components/TaskNavBar";
@@ -276,16 +277,19 @@ const TaskIndex = () => {
     };
 
     return (
-        <TaskLayout
-            selectedDates={selectedDates}
-            selectedProgrammer={selectedProgrammer}
-            onDateChange={setSelectedDates}
-            onFilterStatus={setSelectedStatus}
-            onProgrammerChange={setSelectedProgrammer}
-            onResetFilters={resetFilters}
-            programmers={programmers}
-            isSupervisor={isSupervisor}
-        >
+        <div className="min-h-screen bg-base-200 p-4">
+            {/* Header / Back Button */}
+            <div className="flex items-center justify-between px-5 py-3  mb-4">
+                <Link
+                    href="/"
+                    className="flex items-center gap-2 btn btn-outline btn-sm"
+                >
+                    <LeftOutlined style={{ width: 16, height: 16 }} />
+                    Back to Main
+                </Link>
+            </div>
+
+            {/* Task Navbar */}
             <TaskNavbar
                 isCardView={isCardView}
                 toggleView={toggleView}
@@ -293,75 +297,84 @@ const TaskIndex = () => {
                 onSearch={setSearchTerm}
                 setIsModalOpen={setIsModalOpen}
                 isSupervisor={isSupervisor}
+                selectedDates={selectedDates}
+                onDateChange={setSelectedDates}
+                selectedProgrammer={selectedProgrammer}
+                onProgrammerChange={setSelectedProgrammer}
+                programmers={programmers}
+                selectedStatus={selectedStatus}
+                onFilterStatus={setSelectedStatus}
+                resetFilters={resetFilters}
             />
 
-            <>
-                <NewTaskModal
-                    open={isModalOpen}
-                    onClose={() => setIsModalOpen(false)}
-                    onCreate={handleCreateTask}
-                    empId={emp_data?.emp_id}
+            {/* Modals */}
+            <NewTaskModal
+                open={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onCreate={handleCreateTask}
+                empId={emp_data?.emp_id}
+            />
+
+            <TaskHistoryModal
+                visible={historyModal.visible}
+                logs={historyModal.logs}
+                onClose={() =>
+                    setHistoryModal({
+                        visible: false,
+                        taskId: null,
+                        logs: [],
+                    })
+                }
+            />
+
+            <TaskNoteModal
+                visible={noteModal.visible}
+                noteText={noteText}
+                onCancel={() => {
+                    setNoteModal({ visible: false, taskId: null });
+                    setNoteText("");
+                }}
+                onChange={setNoteText}
+                onOk={handleAddNote}
+            />
+
+            {/* Error Alert */}
+            {error && (
+                <Alert
+                    message="Error"
+                    description={error}
+                    type="error"
+                    showIcon
+                    closable
+                    className="mb-4"
                 />
+            )}
 
-                {error && (
-                    <Alert
-                        message="Error"
-                        description={error}
-                        type="error"
-                        showIcon
-                        closable
-                        className="mb-4"
-                    />
-                )}
-
-                {loading ? (
-                    <TaskSkeleton isCardView={isCardView} />
-                ) : isCardView ? (
-                    <TaskCardView
-                        tasks={filteredTasks}
-                        loading={loading}
-                        getStatusColor={getStatusColor}
-                        getActionItems={getActionItems}
-                        handleQuickComplete={handleQuickComplete}
-                        isSupervisor={isSupervisor}
-                        getColorFromString={getColorFromString}
-                    />
-                ) : (
-                    <TaskTable
-                        tasks={filteredTasks}
-                        loading={loading}
-                        getStatusColor={getStatusColor}
-                        getActionItems={getActionItems}
-                        handleQuickComplete={handleQuickComplete}
-                        isSupervisor={isSupervisor}
-                        getColorFromString={getColorFromString}
-                    />
-                )}
-
-                <TaskHistoryModal
-                    visible={historyModal.visible}
-                    logs={historyModal.logs}
-                    onClose={() =>
-                        setHistoryModal({
-                            visible: false,
-                            taskId: null,
-                            logs: [],
-                        })
-                    }
+            {/* Task Content */}
+            {loading ? (
+                <TaskSkeleton isCardView={isCardView} />
+            ) : isCardView ? (
+                <TaskCardView
+                    tasks={filteredTasks}
+                    loading={loading}
+                    getStatusColor={getStatusColor}
+                    getActionItems={getActionItems}
+                    handleQuickComplete={handleQuickComplete}
+                    isSupervisor={isSupervisor}
+                    getColorFromString={getColorFromString}
                 />
-
-                <TaskNoteModal
-                    visible={noteModal.visible}
-                    noteText={noteText}
-                    onCancel={() => {
-                        setNoteModal({ visible: false, taskId: null });
-                        setNoteText("");
-                    }}
-                    onChange={setNoteText}
-                    onOk={handleAddNote}
+            ) : (
+                <TaskTable
+                    tasks={filteredTasks}
+                    loading={loading}
+                    getStatusColor={getStatusColor}
+                    getActionItems={getActionItems}
+                    handleQuickComplete={handleQuickComplete}
+                    isSupervisor={isSupervisor}
+                    getColorFromString={getColorFromString}
                 />
-            </>
-        </TaskLayout>
+            )}
+        </div>
     );
 };
 
