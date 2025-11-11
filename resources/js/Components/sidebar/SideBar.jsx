@@ -1,16 +1,33 @@
-import { Link, usePage } from "@inertiajs/react";
-import { useState } from "react";
-import { useContext } from "react";
+import { Link, usePage, router } from "@inertiajs/react";
+import { useState, useContext } from "react";
 import Navigation from "@/Components/sidebar/Navigation";
 import ThemeToggler from "@/Components/sidebar/ThemeToggler";
 import { ThemeContext } from "../ThemeContext";
-import { Menu, X, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import NotificationBell from "@/Components/NotificationBell";
+import {
+    Menu,
+    X,
+    PanelLeftClose,
+    PanelLeftOpen,
+    LogOut,
+    User,
+} from "lucide-react";
 
 export default function Sidebar() {
-    const { display_name } = usePage().props;
-    const { theme, toggleTheme } = useContext(ThemeContext); // Use context
+    const { display_name, emp_data } = usePage().props;
+    const { theme, toggleTheme } = useContext(ThemeContext);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true); // desktop toggle
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false); // mobile toggle
+
+    // Logout function
+    const logout = () => {
+        const token = localStorage.getItem("authify-token");
+        localStorage.removeItem("authify-token");
+        router.get(route("logout"));
+        window.location.href = `http://192.168.2.221/authify/public/logout?key=${encodeURIComponent(
+            token
+        )}&redirect=${encodeURIComponent(route("dashboard"))}`;
+    };
 
     const formattedAppName = display_name
         ?.split(" ")
@@ -21,7 +38,7 @@ export default function Sidebar() {
         <div className="flex">
             {/* Mobile Hamburger */}
             <button
-                className="absolute z-50 p-2 rounded top-4 left-4 md:hidden"
+                className="absolute z-[60] p-2 rounded top-4 left-4 md:hidden"
                 onClick={() => setIsMobileSidebarOpen(true)}
             >
                 <Menu className="w-6 h-6" />
@@ -40,11 +57,11 @@ export default function Sidebar() {
                 className={`
                     fixed md:relative top-0 left-0 z-50 transition-all duration-300
                     ${
+                        // Hide sidebar on mobile only, not on desktop
                         isMobileSidebarOpen
                             ? "translate-x-0"
-                            : "-translate-x-full"
+                            : "md:translate-x-0 -translate-x-full md:!translate-x-0"
                     }
-                    md:translate-x-0
                     flex flex-col min-h-screen
                     ${isSidebarOpen ? "w-[240px]" : "w-[80px]"}
                     px-4 pb-6 pt-4
@@ -108,14 +125,45 @@ export default function Sidebar() {
                         <p className="pt-[2px] pl-1">{formattedAppName}</p>
                     )}
                 </Link>
+
                 <br />
 
                 {/* Navigation */}
                 <Navigation isSidebarOpen={isSidebarOpen} />
 
+                {/* Mobile-only (Notification + Profile + Logout) */}
+                {isMobileSidebarOpen && (
+                    <div className="mt-6 border-t border-base-300 pt-4 md:hidden">
+                        <div className="flex items-center mb-3 space-x-2">
+                            <NotificationBell />
+                            <span className="font-medium">
+                                Hello, {emp_data?.emp_firstname}
+                            </span>
+                        </div>
+                        <div className="flex flex-col space-y-2">
+                            <Link
+                                href={route("profile.index")}
+                                className="flex items-center space-x-2 hover:bg-base-200 p-2 rounded-lg transition"
+                            >
+                                <User className="w-5 h-5" />
+                                <span>Profile</span>
+                            </Link>
+                            <button
+                                onClick={logout}
+                                className="flex items-center space-x-2 hover:bg-base-200 p-2 rounded-lg transition"
+                            >
+                                <LogOut className="w-5 h-5" />
+                                <span>Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Theme toggler */}
                 <div
-                    className={`${isSidebarOpen ? "block" : "hidden"} md:block`}
+                    className={`${
+                        isSidebarOpen ? "block" : "hidden"
+                    } md:block mt-auto`}
                 >
                     <ThemeToggler toggleTheme={toggleTheme} theme={theme} />
                 </div>

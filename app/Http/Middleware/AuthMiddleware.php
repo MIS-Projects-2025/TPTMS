@@ -86,6 +86,7 @@ class AuthMiddleware
                 'token' => $currentUser->token,
                 'emp_id' => $currentUser->emp_id,
                 'emp_name' => $currentUser->emp_name,
+                'emp_position' => $currentUser->emp_position,
                 'emp_firstname' => $currentUser->emp_firstname,
                 'emp_jobtitle' => $currentUser->emp_jobtitle,
                 'emp_dept' => $currentUser->emp_dept,

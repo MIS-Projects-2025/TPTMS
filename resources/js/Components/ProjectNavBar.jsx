@@ -1,5 +1,5 @@
 import React from "react";
-import { Input, Select, Tooltip } from "antd";
+import { Input, Select, Tooltip, Badge } from "antd";
 import { FileSpreadsheet } from "lucide-react";
 
 const { Option } = Select;
@@ -11,10 +11,31 @@ export default function ProjectNavbar({
     onDepartmentChange,
     setShowImportModal,
     showAllDepartments,
+    onCreateProject,
+    // New props for additional filtering
+    assignedPeople,
+    statusCounts,
+    onAssignedToChange,
+    onStatusChange,
+    currentFilters,
+    projectStatuses,
 }) {
+    // Status options with counts - using numeric values
+    const statusOptions = [
+        { value: "", label: "All Status", count: statusCounts?.all || 0 },
+        ...(projectStatuses?.map((status) => ({
+            value: status.value,
+            label: status.label,
+            count: statusCounts?.[status.value] || 0,
+        })) || []),
+    ];
+
+    // Get count for "All" option
+    const allCount = statusCounts?.all || 0;
+
     return (
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-base-100 px-5 py-3 rounded-xl shadow-sm border border-base-300">
-            {/* Left Section: Search + Department Filter */}
+            {/* Left Section: Search + Filters */}
             <div className="flex flex-wrap items-center gap-3">
                 {/* Search Box */}
                 <div className="flex items-center gap-2">
@@ -35,10 +56,57 @@ export default function ProjectNavbar({
                         allowClear
                         style={{ width: 200 }}
                         onChange={onDepartmentChange}
+                        value={currentFilters?.department}
                     >
                         {departments?.map((dept) => (
                             <Option key={dept} value={dept}>
                                 {dept}
+                            </Option>
+                        ))}
+                    </Select>
+                )}
+
+                {/* Assigned To Filter */}
+                {showAllDepartments && (
+                    <Select
+                        placeholder="Filter by Assigned To"
+                        allowClear
+                        style={{ width: 200 }}
+                        onChange={onAssignedToChange}
+                        value={currentFilters?.assigned_to}
+                    >
+                        {assignedPeople?.map((person) => (
+                            <Option key={person.emp_id} value={person.emp_id}>
+                                {person.name}
+                            </Option>
+                        ))}
+                    </Select>
+                )}
+
+                {/* Status Filter - Using numeric values */}
+                {showAllDepartments && (
+                    <Select
+                        placeholder="Filter by Status"
+                        allowClear
+                        style={{ width: 180 }}
+                        onChange={onStatusChange}
+                        value={currentFilters?.status}
+                    >
+                        {statusOptions.map((status) => (
+                            <Option key={status.value} value={status.value}>
+                                <div className="flex justify-between items-center w-full">
+                                    <span className="flex-1">
+                                        {status.label}
+                                    </span>
+                                    <Badge
+                                        count={status.count}
+                                        size="small"
+                                        style={{
+                                            backgroundColor: "#1890ff",
+                                            marginLeft: 8,
+                                        }}
+                                    />
+                                </div>
                             </Option>
                         ))}
                     </Select>

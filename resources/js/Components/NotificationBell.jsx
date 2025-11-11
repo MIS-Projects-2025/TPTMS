@@ -7,7 +7,6 @@ export default function NotificationBell() {
     const dropdownRef = useRef(null);
     const { notifications, unreadCount, markAsRead, markAllAsRead } =
         useNotifications();
-    // console.log(notifications);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -46,8 +45,6 @@ export default function NotificationBell() {
 
     // Handle notification click - different behavior for projects vs tickets
     const handleNotificationClick = async (notif) => {
-        // console.log("Notification clicked:", notif);
-
         // Parse data if it's a string
         const notifData =
             typeof notif.data === "string"
@@ -70,7 +67,6 @@ export default function NotificationBell() {
 
         // Handle PROJECT notifications - just redirect to projects list
         if (isProjectNotification) {
-            // console.log("Redirecting to projects list");
             const redirectUrl = notifData.redirect_url || route("project.list");
             window.location.href = redirectUrl;
             return;
@@ -81,7 +77,6 @@ export default function NotificationBell() {
             const ticketId = notifData.ticket_id || notif.ticket_id;
             const actionRequired =
                 notif.action_required || notifData.action_required || "VIEW";
-            // console.log("Redirecting with action:", actionRequired);
             const hash = btoa(`${ticketId}:${actionRequired}`);
             window.location.href = route("tickets.view", hash);
         }
@@ -160,7 +155,7 @@ export default function NotificationBell() {
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 card card-compact w-96 shadow-xl bg-base-100 border border-base-300 p-0 rounded-lg z-50">
+                <div className="absolute left-0 md:right-0 md:left-auto bottom-full md:bottom-auto md:top-full mb-2 md:mb-0 md:mt-2 card card-compact w-[calc(100vw-2rem)] md:w-96 max-w-96 shadow-xl bg-base-100 border border-base-300 p-0 rounded-lg z-50">
                     <div className="p-4 border-b border-base-300 flex justify-between items-center bg-base-200 rounded-t-lg">
                         <h3 className="font-bold text-lg flex items-center gap-2">
                             <Bell size={20} />
@@ -179,7 +174,7 @@ export default function NotificationBell() {
                         )}
                     </div>
 
-                    <div className="overflow-y-auto flex-1 max-h-96">
+                    <div className="overflow-y-auto flex-1 max-h-28 md:max-h-96">
                         {notifications.length === 0 ? (
                             <div className="p-8 text-center text-base-content/50">
                                 <Bell

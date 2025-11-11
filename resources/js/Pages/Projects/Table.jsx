@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { use, useState } from "react";
 import { usePage, router } from "@inertiajs/react";
 import {
     Table,
@@ -9,18 +9,17 @@ import {
     Tooltip,
     Button,
     Dropdown,
-    Menu,
-    Alert,
     message,
 } from "antd";
 import {
-    UserOutlined,
     PlusOutlined,
     FileSearchOutlined,
     MoreOutlined,
     EditOutlined,
+    LeftOutlined,
+    PlusCircleOutlined,
 } from "@ant-design/icons";
-import ProjectLayout from "@/Layouts/ProjectLayout";
+import { Link } from "@inertiajs/react";
 import ProjectNavbar from "@/Components/ProjectNavbar";
 import ImportModal from "./ImportModal";
 import ProjectLogsModal from "./ProjectLogsModal";
@@ -38,7 +37,10 @@ export default function ProjectsTable() {
         appName,
         showAllDepartments,
         emp_data,
+        programmers,
+        statusCounts,
     } = usePage().props;
+    console.log(usePage().props);
 
     const [loading, setLoading] = useState(false);
     const [searchValue, setSearchValue] = useState(
@@ -49,7 +51,7 @@ export default function ProjectsTable() {
     const [showLogsModal, setShowLogsModal] = useState(false);
     const [showEditDrawer, setShowEditDrawer] = useState(false);
     const [selectedProject, setSelectedProject] = useState(null);
-    const [drawerMode, setDrawerMode] = useState("edit"); // 'edit' or 'create'
+    const [drawerMode, setDrawerMode] = useState("edit");
 
     // Check if user is programmer
     const isProgrammer = emp_data?.emp_system_role === "Programmer";
@@ -62,13 +64,7 @@ export default function ProjectsTable() {
     } = useProjectLogs(appName);
 
     // Fetch project constants from API
-    const {
-        loading: constantsLoading,
-        error: constantsError,
-        projectStatuses,
-        getStatusLabel,
-        getStatusColor,
-    } = useProjectConstants();
+    const { projectStatuses, getStatusLabel } = useProjectConstants();
 
     const encodeParams = (params) => btoa(JSON.stringify(params));
 
@@ -128,6 +124,32 @@ export default function ProjectsTable() {
         );
     };
 
+    // 👨‍💻 Assigned To filter (using assigned_to array)
+    const handleAssignedToChange = (value) => {
+        const updated = { ...filters, assigned_to: value, page: 1 };
+        setFilters(updated);
+        const encoded = encodeParams(updated);
+        setLoading(true);
+        router.get(
+            route("project.list"),
+            { q: encoded },
+            { preserveState: true, onFinish: () => setLoading(false) }
+        );
+    };
+
+    // 📊 Status filter - Send label string to backend
+    const handleStatusChange = (value) => {
+        const updated = { ...filters, status: value, page: 1 };
+        setFilters(updated);
+        const encoded = encodeParams(updated);
+        setLoading(true);
+        router.get(
+            route("project.list"),
+            { q: encoded },
+            { preserveState: true, onFinish: () => setLoading(false) }
+        );
+    };
+
     // 📄 Table pagination
     const handleTableChange = (paginationData) => {
         const updated = { ...filters, page: paginationData.current };
@@ -164,6 +186,38 @@ export default function ProjectsTable() {
         setSelectedProject(project);
         setShowLogsModal(true);
         fetchProjectLogs(project.id, 1);
+    };
+
+    // Handle New Project/Ticket click
+    const handleNewProjectClick = () => {
+        if (isProgrammer) {
+            handleCreateProject();
+        } else {
+            const newEncoded = btoa("new");
+            const params = new URLSearchParams({
+                action: newEncoded,
+            });
+            window.location.href = `${route("tickets")}?${params.toString()}`;
+        }
+    };
+
+    // Get unique assigned people from all projects for filter
+    const getAssignedPeopleOptions = () => {
+        const peopleMap = new Map();
+
+        projects?.forEach((project) => {
+            project.assigned_to?.forEach((person) => {
+                if (person.emp_id && !peopleMap.has(person.emp_id)) {
+                    peopleMap.set(person.emp_id, {
+                        emp_id: person.emp_id,
+                        name: person.fullName || person.full_name,
+                        initials: person.initials,
+                    });
+                }
+            });
+        });
+
+        return Array.from(peopleMap.values());
     };
 
     // Render avatar group helper
@@ -208,6 +262,12 @@ export default function ProjectsTable() {
         );
     };
 
+    // Get status label for display
+    const getStatusDisplayLabel = (statusValue) => {
+        const statusObj = projectStatuses.find((s) => s.value === statusValue);
+        return statusObj ? statusObj.label : statusValue;
+    };
+
     // 🧱 Table Columns
     const columns = [
         {
@@ -222,6 +282,7 @@ export default function ProjectsTable() {
             dataIndex: "description",
             key: "description",
             width: 200,
+            render: (desc) => desc || <span className="text-gray-400">-</span>,
         },
         {
             title: "Department",
@@ -341,7 +402,7 @@ export default function ProjectsTable() {
                 );
 
                 if (!statusObj) {
-                    return <Tag color="default">Unknown</Tag>;
+                    return <Tag color="default">{statusLabel}</Tag>;
                 }
 
                 return <Tag color={statusObj.color}>{statusObj.label}</Tag>;
@@ -397,20 +458,53 @@ export default function ProjectsTable() {
     ];
 
     return (
-        <ProjectLayout
-            onCreateProject={handleCreateProject}
-            isProgrammer={isProgrammer}
-        >
-            <ProjectNavbar
-                searchValue={searchValue}
-                onSearch={handleSearch}
-                departments={departments}
-                onDepartmentChange={handleDepartmentChange}
-                setShowImportModal={setShowImportModal}
-                showAllDepartments={showAllDepartments}
-                onCreateProject={isProgrammer ? handleCreateProject : null}
-            />
+        <div className="min-h-screen bg-base-200 p-4">
+            {/* Enhanced Navbar with all controls */}
+            <div className="flex flex-col gap-4 mb-6">
+                {/* Top Row: Back button and New Project/Ticket button */}
+                <div className="flex items-center justify-between bg-base-100 px-5 py-3 rounded-xl shadow-sm border border-base-300">
+                    <Link
+                        href="/"
+                        className="flex items-center gap-2 btn btn-outline btn-sm"
+                    >
+                        <LeftOutlined style={{ width: 16, height: 16 }} />
+                        Back to Main
+                    </Link>
 
+                    <button
+                        className="btn btn-primary btn-sm flex items-center gap-2"
+                        onClick={handleNewProjectClick}
+                        title={
+                            isProgrammer
+                                ? "Create new project"
+                                : "Create new ticket"
+                        }
+                    >
+                        <PlusCircleOutlined style={{ width: 16, height: 16 }} />
+                        {isProgrammer ? "New Project" : "New Ticket"}
+                    </button>
+                </div>
+
+                {/* Enhanced ProjectNavbar with additional filters */}
+                <ProjectNavbar
+                    searchValue={searchValue}
+                    onSearch={handleSearch}
+                    departments={departments}
+                    onDepartmentChange={handleDepartmentChange}
+                    setShowImportModal={setShowImportModal}
+                    showAllDepartments={showAllDepartments}
+                    onCreateProject={isProgrammer ? handleCreateProject : null}
+                    // New props for additional filtering
+                    assignedPeople={getAssignedPeopleOptions()}
+                    statusCounts={statusCounts}
+                    onAssignedToChange={handleAssignedToChange}
+                    onStatusChange={handleStatusChange}
+                    currentFilters={filters}
+                    projectStatuses={projectStatuses}
+                />
+            </div>
+
+            {/* Main Content */}
             <Spin spinning={loading}>
                 {loading ? (
                     <ProjectTableSkeleton />
@@ -476,6 +570,6 @@ export default function ProjectsTable() {
                     );
                 }}
             />
-        </ProjectLayout>
+        </div>
     );
 }

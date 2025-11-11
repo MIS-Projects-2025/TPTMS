@@ -61,6 +61,7 @@ class ProjectService
         $filters = [
             'search' => trim($request->input('search', '')),
             'department' => $request->input('department'),
+            'assigned_to' => $request->input('assigned_to'),
             'status' => $request->input('status', ''),
             'sortField' => $request->input('sortField', 'created_at'),
             'sortOrder' => $request->input('sortOrder', 'desc'),
@@ -96,7 +97,7 @@ class ProjectService
                 'total' => $result['total'],
                 'last_page' => $result['last_page'],
             ],
-            // 'departments' => $this->projectRepository->getDepartments(),
+            'departments' => $this->projectRepository->getDepartments(),
             'statusCounts' => $this->projectRepository->getStatusCounts(),
             'filters' => $filters,
         ];

@@ -22,7 +22,7 @@ class ProjectRepository
     public function getProjects($filters = [], $pagination = [])
     {
         $query = $this->getBaseQuery();
-
+        // dd($filters);
         // Apply filters
         if (!empty($filters['search'])) {
             $query->where(function ($q) use ($filters) {
@@ -34,9 +34,11 @@ class ProjectRepository
         if (!empty($filters['department'])) {
             $query->where('PROJ_DEPT', $filters['department']);
         }
-
-        if (!empty($filters['status_ids'])) {
-            $query->whereIn('PROJ_STATUS', $filters['status_ids']);
+        if (!empty($filters['assigned_to'])) {
+            $query->where('ASSIGNED_PROGS', $filters['assigned_to']);
+        }
+        if (!empty($filters['status'])) {
+            $query->where('PROJ_STATUS', $filters['status']);
         }
 
         // Apply sorting
