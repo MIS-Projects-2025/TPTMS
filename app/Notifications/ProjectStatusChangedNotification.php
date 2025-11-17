@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProjectStatusChangedNotification extends Notification implements ShouldBroadcast
 {
-    use Queueable;
+    // use Queueable;
 
     public $projectId;
     public $projectName;
@@ -20,6 +20,7 @@ class ProjectStatusChangedNotification extends Notification implements ShouldBro
     public $changedBy;
     public $department;
     public $actionRequired;
+    public $recipientId; // NEW: optional recipient override
 
     public function __construct($projectId, $projectName, $oldStatus, $newStatus, $changedBy, $department)
     {
@@ -30,11 +31,19 @@ class ProjectStatusChangedNotification extends Notification implements ShouldBro
         $this->changedBy = $changedBy;
         $this->department = $department;
         $this->actionRequired = null;
+        $this->recipientId = null; // default null
     }
 
     public function setActionRequired($action)
     {
         $this->actionRequired = $action;
+        return $this;
+    }
+
+    // NEW: set a specific recipient ID
+    public function setRecipientId($recipientId)
+    {
+        $this->recipientId = $recipientId;
         return $this;
     }
 
@@ -58,23 +67,24 @@ class ProjectStatusChangedNotification extends Notification implements ShouldBro
             'changed_by' => $this->changedBy,
             'department' => $this->department,
             'type' => 'PROJECT_STATUS_CHANGED',
-            'action_required' => null, // Informational only - no action required
+            'action_required' => $this->actionRequired, // now uses set value
             'timestamp' => now()->toDateTimeString(),
         ]);
     }
 
     public function broadcastOn($notifiable = null)
     {
-        if (!$notifiable) return [];
+        $recipientId = $this->recipientId ?? ($notifiable->emp_id ?? null);
+        if (!$recipientId) return [];
 
         Log::info('Broadcasting project status change to channel:', [
-            'channel' => 'users.' . $notifiable->emp_id,
+            'channel' => 'users.' . $recipientId,
             'project_id' => $this->projectId,
             'old_status' => $this->oldStatus,
             'new_status' => $this->newStatus
         ]);
 
-        return new PrivateChannel('users.' . $notifiable->emp_id);
+        return new PrivateChannel('users.' . $recipientId);
     }
 
     public function broadcastAs()
@@ -96,7 +106,7 @@ class ProjectStatusChangedNotification extends Notification implements ShouldBro
             'changed_by' => $this->changedBy,
             'department' => $this->department,
             'type' => 'PROJECT_STATUS_CHANGED',
-            'action_required' => null,
+            'action_required' => $this->actionRequired,
             'redirect_url' => route('project.list'),
             'created_at' => now()->toDateTimeString(),
         ];

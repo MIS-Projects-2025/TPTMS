@@ -7,8 +7,8 @@ export default function NavBar() {
     const { emp_data } = usePage().props;
 
     const logout = () => {
-        const token = localStorage.getItem("authify-token");
-        localStorage.removeItem("authify-token");
+        const token = localStorage.getItem("authify_session");
+        localStorage.removeItem("authify_session");
         router.get(route("logout"));
         window.location.href = `https://192.168.2.221/authify/public/logout?key=${encodeURIComponent(
             token

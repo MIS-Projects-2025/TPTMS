@@ -16,7 +16,7 @@ class AuthMiddleware
         if ($request->isMethod('OPTIONS')) {
             return $next($request);
         }
-
+        // dd(session('emp_data.token'));
         $token = session('emp_data.token') ?? $_COOKIE['sso_token'] ?? null;
 
 

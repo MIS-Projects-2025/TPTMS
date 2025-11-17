@@ -7,17 +7,17 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Support\Facades\Log;
 
 class TicketApprovedNotification extends Notification implements ShouldBroadcast
 {
-    use Queueable;
+    // use Queueable;
 
     public $ticketId;
     public $approvedBy;
     public $approvalType;
     public $projectName;
     public $actionRequired;
+    public $recipientId;
 
     public function __construct($ticketId, $approvedBy, $approvalType, $projectName = '')
     {
@@ -26,6 +26,13 @@ class TicketApprovedNotification extends Notification implements ShouldBroadcast
         $this->approvalType = $approvalType; // 'ASSESSMENT', 'DH', 'OD'
         $this->projectName = $projectName;
         $this->actionRequired = null;
+        $this->recipientId = null;
+    }
+
+    public function setRecipientId($recipientId)
+    {
+        $this->recipientId = $recipientId;
+        return $this;
     }
 
     public function setActionRequired($action)
@@ -63,15 +70,14 @@ class TicketApprovedNotification extends Notification implements ShouldBroadcast
 
     public function broadcastOn($notifiable = null)
     {
-        if (!$notifiable) return [];
+        // Use recipientId if set, otherwise fallback to notifiable
+        $recipientId = $this->recipientId ?? ($notifiable->emp_id ?? null);
 
-        Log::info('Broadcasting approval to channel:', [
-            'channel' => 'users.' . $notifiable->emp_id,
-            'ticket_id' => $this->ticketId,
-            'approval_type' => $this->approvalType
-        ]);
+        if (!$recipientId) {
+            return [];
+        }
 
-        return new PrivateChannel('users.' . $notifiable->emp_id);
+        return new PrivateChannel('users.' . $recipientId);
     }
 
     public function broadcastAs()
@@ -89,6 +95,7 @@ class TicketApprovedNotification extends Notification implements ShouldBroadcast
             'type' => 'TICKET_APPROVED',
             'action_required' => $this->actionRequired,
             'created_at' => now()->toDateTimeString(),
+            'recipient_id' => $this->recipientId, // added recipientId to database entry
         ];
     }
 }

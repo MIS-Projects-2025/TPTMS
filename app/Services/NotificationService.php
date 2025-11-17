@@ -322,7 +322,6 @@ class NotificationService
 
     private function sendNotifications($recipients, $notificationPrototype, $notificationType, $actionRequiredMap = [])
     {
-        $recipients = array_values(array_unique($recipients));
 
         $success = 0;
         $failed = 0;
