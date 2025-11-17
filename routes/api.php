@@ -12,11 +12,16 @@ use App\Http\Controllers\TicketingController;
 // ========== PUBLIC API ROUTES (No authentication required) ==========
 
 
-
-
 Route::post('/TPTMS/broadcasting/auth', function (Request $request) {
+    Log::info('Broadcast auth hit', [
+        'headers' => $request->headers->all(),
+        'cookies' => $request->cookies->all(),
+        'session' => session()->all(),
+        'body' => $request->all(),
+    ]);
     try {
         $empData = session('emp_data');
+
         Log::info('Broadcast Auth Session:', ['emp_data' => $empData]);
 
         $user = $empData ? \App\Models\NotificationUser::firstOrCreate(
@@ -56,7 +61,7 @@ Route::post('/TPTMS/broadcasting/auth', function (Request $request) {
 
 
 // ========== PROTECTED API ROUTES (Protected by AuthMiddleware) ==========
-Route::prefix('api')->middleware(AuthMiddleware::class)->group(function () {
+Route::prefix('api')->group(function () {
 
     // Get all unread notifications
     Route::get('/notifications', function () {

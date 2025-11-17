@@ -7,7 +7,7 @@ use App\Http\Middleware\AuthMiddleware;
 $app_name = $app_name ?? env('APP_NAME', 'app');
 
 Route::prefix($app_name)
-    ->middleware(AuthMiddleware::class)
+
     ->group(function () {
 
         Route::get('/projects/datatable', [ProjectController::class, 'getProjectsDataTable'])
