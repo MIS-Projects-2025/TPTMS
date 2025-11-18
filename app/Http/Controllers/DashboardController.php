@@ -11,7 +11,9 @@ class DashboardController extends Controller
 {
     public function index(Request $request)
     {
+
         $empData = session('emp_data');
+        // dd($empData);
         if (!$empData) {
             return redirect()->route('login');
         }

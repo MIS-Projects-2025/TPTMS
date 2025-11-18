@@ -7,16 +7,16 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Support\Facades\Log;
 
 class TicketAssignedNotification extends Notification implements ShouldBroadcast
 {
-    use Queueable;
+    // use Queueable;
 
     public $ticketId;
     public $assignedBy;
     public $projectName;
     public $actionRequired;
+    public $recipientId;
 
     public function __construct($ticketId, $assignedBy, $projectName = '')
     {
@@ -24,6 +24,13 @@ class TicketAssignedNotification extends Notification implements ShouldBroadcast
         $this->assignedBy = $assignedBy;
         $this->projectName = $projectName;
         $this->actionRequired = null;
+        $this->recipientId = null;
+    }
+
+    public function setRecipientId($recipientId)
+    {
+        $this->recipientId = $recipientId;
+        return $this;
     }
 
     public function setActionRequired($action)
@@ -53,14 +60,14 @@ class TicketAssignedNotification extends Notification implements ShouldBroadcast
 
     public function broadcastOn($notifiable = null)
     {
-        if (!$notifiable) return [];
+        // Use recipientId if set, otherwise fallback to notifiable
+        $recipientId = $this->recipientId ?? ($notifiable->emp_id ?? null);
 
-        Log::info('Broadcasting assignment to channel:', [
-            'channel' => 'users.' . $notifiable->emp_id,
-            'ticket_id' => $this->ticketId
-        ]);
+        if (!$recipientId) {
+            return [];
+        }
 
-        return new PrivateChannel('users.' . $notifiable->emp_id);
+        return new PrivateChannel('users.' . $recipientId);
     }
 
     public function broadcastAs()
@@ -78,6 +85,7 @@ class TicketAssignedNotification extends Notification implements ShouldBroadcast
             'type' => 'TICKET_ASSIGNED',
             'action_required' => $this->actionRequired,
             'created_at' => now()->toDateTimeString(),
+            'recipient_id' => $this->recipientId, // added recipientId to database entry
         ];
     }
 }

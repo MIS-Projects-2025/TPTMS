@@ -9,6 +9,7 @@ class NotificationUser extends Authenticatable
 {
     use Notifiable;
 
+    protected $connection = 'mysql'; // Force main TPTMS connection
     protected $table = 'notification_users';
     protected $primaryKey = 'emp_id';
     public $incrementing = false;
@@ -21,17 +22,11 @@ class NotificationUser extends Authenticatable
         'emp_dept',
     ];
 
-    /**
-     * Channel for broadcasting notifications
-     */
     public function receivesBroadcastNotificationsOn()
     {
         return 'users.' . $this->emp_id;
     }
 
-    /**
-     * Required for Authenticatable
-     */
     public function getAuthIdentifierName()
     {
         return 'emp_id';

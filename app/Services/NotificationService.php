@@ -320,32 +320,73 @@ class NotificationService
         return $this->getMISProgrammers();
     }
 
-    private function sendNotifications($recipients, $notification, $notificationType, $actionRequiredMap = [])
+    private function sendNotifications($recipients, $notificationPrototype, $notificationType, $actionRequiredMap = [])
     {
+
         $success = 0;
         $failed = 0;
 
+        Log::info("=== STARTING NOTIFICATIONS ===", [
+            'type' => $notificationType,
+            'recipients' => $recipients,
+            'total_recipients' => count($recipients)
+        ]);
+
         foreach ($recipients as $recipientId) {
             try {
+                Log::info("🔔 Processing recipient", [
+                    'recipient_id' => $recipientId
+                ]);
+
                 $user = NotificationUser::firstOrCreate(
                     ['emp_id' => $recipientId],
-                    ['emp_name' => $this->getEmployeeName($recipientId), 'emp_dept' => $this->getEmployeeDept($recipientId)]
+                    [
+                        'emp_name' => $this->getEmployeeName($recipientId),
+                        'emp_dept' => $this->getEmployeeDept($recipientId)
+                    ]
                 );
 
-                // Set action_required dynamically
+                // 🔥 CREATE NEW NOTIFICATION INSTANCE PER RECIPIENT
+                $notification = clone $notificationPrototype;
+
+                // Assign per-recipient values
                 $action = $actionRequiredMap[$recipientId] ?? null;
                 $notification->setActionRequired($action);
+                $notification->setRecipientId($recipientId);
+
+                Log::info("🚀 About to call notify()", [
+                    'recipient_id' => $recipientId,
+                    'notification_recipient_id' => $notification->recipientId,
+                    'action' => $action
+                ]);
 
                 $user->notify($notification);
+
+                Log::info("✅ Notification sent successfully", [
+                    'user_emp_id' => $recipientId,
+                    'channel' => 'users.' . $recipientId
+                ]);
+
                 $success++;
             } catch (\Exception $e) {
-                Log::error("Failed to notify {$recipientId}: " . $e->getMessage());
+                Log::error("❌ Failed to notify {$recipientId}", [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
                 $failed++;
             }
         }
 
+        Log::info("=== NOTIFICATION BATCH COMPLETE ===", [
+            'success' => $success,
+            'failed' => $failed,
+            'total' => count($recipients)
+        ]);
+
         return ['success' => $success, 'failed' => $failed, 'total' => count($recipients)];
     }
+
+
 
     private function getEmployeeName($empId)
     {
@@ -389,9 +430,16 @@ class NotificationService
     private function getMISProgrammers()
     {
         $programmers = DB::connection('masterlist')->select("
-            SELECT DISTINCT EMPLOYID FROM employee_masterlist 
-            WHERE DEPARTMENT='MIS' AND (UPPER(JOB_TITLE) LIKE '%PROGRAMMER%' OR (UPPER(JOB_TITLE) LIKE '%MIS%' AND UPPER(JOB_TITLE) LIKE '%SUPERVISOR%')) 
-            AND ACCSTATUS=1
+            SELECT EMPLOYID
+FROM employee_masterlist
+WHERE DEPARTMENT='MIS'
+  AND ACCSTATUS=1
+  AND (
+        UPPER(JOB_TITLE) LIKE '%PROGRAMMER%'
+        OR (UPPER(JOB_TITLE) LIKE '%MIS%' AND UPPER(JOB_TITLE) LIKE '%SUPERVISOR%')
+      )
+GROUP BY EMPLOYID;
+
         ");
         return array_map(fn($p) => $p->EMPLOYID, $programmers);
     }

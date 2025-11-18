@@ -7,16 +7,16 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Support\Facades\Log;
 
 class TicketResolvedNotification extends Notification implements ShouldBroadcast
 {
-    use Queueable;
+    // use Queueable;
 
     public $ticketId;
     public $resolvedBy;
     public $projectName;
     public $actionRequired;
+    public $recipientId;
 
     public function __construct($ticketId, $resolvedBy, $projectName = '')
     {
@@ -24,6 +24,13 @@ class TicketResolvedNotification extends Notification implements ShouldBroadcast
         $this->resolvedBy = $resolvedBy;
         $this->projectName = $projectName;
         $this->actionRequired = null;
+        $this->recipientId = null;
+    }
+
+    public function setRecipientId($recipientId)
+    {
+        $this->recipientId = $recipientId;
+        return $this;
     }
 
     public function setActionRequired($action)
@@ -53,14 +60,13 @@ class TicketResolvedNotification extends Notification implements ShouldBroadcast
 
     public function broadcastOn($notifiable = null)
     {
-        if (!$notifiable) return [];
+        $recipientId = $this->recipientId ?? ($notifiable->emp_id ?? null);
 
-        Log::info('Broadcasting resolution to channel:', [
-            'channel' => 'users.' . $notifiable->emp_id,
-            'ticket_id' => $this->ticketId
-        ]);
+        if (!$recipientId) {
+            return [];
+        }
 
-        return new PrivateChannel('users.' . $notifiable->emp_id);
+        return new PrivateChannel('users.' . $recipientId);
     }
 
     public function broadcastAs()
@@ -77,6 +83,7 @@ class TicketResolvedNotification extends Notification implements ShouldBroadcast
             'project_name' => $this->projectName,
             'type' => 'TICKET_RESOLVED',
             'action_required' => $this->actionRequired,
+            'recipient_id' => $this->recipientId, // added recipientId
             'created_at' => now()->toDateTimeString(),
         ];
     }

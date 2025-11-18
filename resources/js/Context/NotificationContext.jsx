@@ -34,51 +34,40 @@ export function NotificationProvider({ children, userId }) {
         }
     }, []);
 
-    /** Setup WebSocket connection */
-    useEffect(() => {
-        if (!userId) {
-            console.warn("No userId provided for notifications");
-            return;
-        }
+/** Setup WebSocket connection */
+useEffect(() => {
+    if (!userId) {
+        console.warn("No userId provided for notifications");
+        return;
+    }
 
-        // Fetch initial notifications
-        fetchNotifications();
+    if (typeof window.echo === "undefined") {
+        console.error("❌ Laravel echo is not initialized!");
+        return;
+    }
 
-        // Subscribe to user's private channel
-        const channel = echo.private(`users.${userId}`);
-        // console.log(`Joining channel: users.${userId}`);
+    console.log("🔄 Initializing notifications for user:", userId);
+
+    // Load notifications once on init
+    fetchNotifications();
+
+    try {
+        // Subscribe to private user channel
+        const channel = window.echo.private(`users.${userId}`);
+        console.log(`🎯 Joining channel: users.${userId}`);
 
         channelRef.current = channel;
 
-        // Listen for notification events - FIXED: Use correct event name
+        // Listen ONLY to the proper Laravel Echo event
         channel.listen(".notification.created", (notification) => {
-            // console.log("Real-time notification received:", notification);
-
-            // Add new notification to the list
-            setNotifications((prev) => {
-                const newNotif = {
-                    id: notification.id || Date.now(),
-                    ticket_id: notification.ticket_id,
-                    message: notification.message,
-                    type: notification.type,
-                    project: notification.project_name,
-                    request_type: notification.request_type,
-                    action_required: notification.action_required,
-                    created_at:
-                        notification.timestamp || new Date().toISOString(),
-                    read_at: null,
-                };
-
-                const updated = [newNotif, ...prev];
-                setUnreadCount(updated.filter((n) => !n.read_at).length);
-                return updated;
-            });
+            console.log("📨 Real-time notification received:", notification);
+            handleNewNotification(notification);
         });
 
-        // Connection event handlers
+        // Subscribe connection status
         channel
             .subscribed(() => {
-                // console.log(`✅ Subscribed to users.${userId}`);
+                console.log(`✅ Successfully subscribed to users.${userId}`);
                 setIsConnected(true);
             })
             .error((error) => {
@@ -86,17 +75,46 @@ export function NotificationProvider({ children, userId }) {
                 setIsConnected(false);
             });
 
-        // Cleanup on unmount - FIXED: Use channelRef
-        return () => {
-            // console.log(`Leaving channel: users.${userId}`);
-            if (channelRef.current) {
-                channelRef.current.stopListening(".notification.created");
-                echo.leave(`users.${userId}`);
-            }
-            channelRef.current = null;
-            setIsConnected(false);
+    } catch (error) {
+        console.error("❌ Error setting up echo channel:", error);
+    }
+
+    // Cleanup
+    return () => {
+        console.log(`👋 Cleaning up notifications for user: ${userId}`);
+
+        if (channelRef.current) {
+            channelRef.current.stopListening(".notification.created");
+            window.echo.leave(`users.${userId}`);
+        }
+
+        channelRef.current = null;
+        setIsConnected(false);
+    };
+}, [userId, fetchNotifications]);
+
+
+/** Handle new notification */
+const handleNewNotification = (notification) => {
+    setNotifications((prev) => {
+        const newNotif = {
+            id: notification.id || `notif_${Date.now()}`,
+            ticket_id: notification.ticket_id,
+            message: notification.message,
+            type: notification.type,
+            project: notification.project_name,
+            request_type: notification.request_type,
+            action_required: notification.action_required,
+            created_at: notification.timestamp || new Date().toISOString(),
+            read_at: null,
         };
-    }, [userId, fetchNotifications]);
+
+        console.log("➕ Adding new notification:", newNotif);
+        const updated = [newNotif, ...prev];
+        setUnreadCount(updated.filter((n) => !n.read_at).length);
+        return updated;
+    });
+};
 
     /** Mark one notification as read */
     const markAsRead = useCallback(async (notificationId) => {

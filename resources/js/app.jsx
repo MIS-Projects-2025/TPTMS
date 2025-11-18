@@ -50,7 +50,7 @@ createInertiaApp({
                                     <NotificationProvider userId={userId}>
                                         <div style={{ position: "relative" }}>
                                             {/* ❄️ Realistic snowfall overlay */}
-                                            {/* <Snowfall
+                                            <Snowfall
                                                 color={snowColor}
                                                 snowflakeCount={150}
                                                 radius={[1.0, 5.0]} // random flake sizes
@@ -65,7 +65,7 @@ createInertiaApp({
                                                     zIndex: 9999,
                                                     pointerEvents: "none",
                                                 }}
-                                            /> */}
+                                            />
                                             <App {...props} />
                                         </div>
                                     </NotificationProvider>

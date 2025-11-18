@@ -1,0 +1,15 @@
+services:
+    soketi:
+        image: quay.io/soketi/soketi:latest
+        ports:
+            - "6001:6001"
+            - "9601:9601"
+        environment:
+            DEBUG: "soketi:*"
+            SOKETI_HOST: "0.0.0.0"
+            SOKETI_PORT: 6001
+            SOKETI_DEFAULT_APP_ID: "954259"
+            SOKETI_DEFAULT_APP_KEY: "34bt7ihktudxw8thfeuy"
+            SOKETI_DEFAULT_APP_SECRET: "zqpnx8kyicks2t3nf8cn"
+            SOKETI_METRICS_SERVER_PORT: 9601
+        restart: unless-stopped
