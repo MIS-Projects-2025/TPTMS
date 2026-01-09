@@ -29,6 +29,9 @@ ChartJS.register(
 
 export default function Dashboard() {
     const { props } = usePage();
+
+    console.log(usePage().props);
+    
     const {
         quickStats = {},
         recentActivity = {},

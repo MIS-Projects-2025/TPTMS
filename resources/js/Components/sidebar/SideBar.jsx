@@ -20,13 +20,11 @@ export default function Sidebar() {
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false); // mobile toggle
 
     // Logout function
-    const logout = () => {
-        const token = localStorage.getItem("authify-token");
-        localStorage.removeItem("authify-token");
-        router.get(route("logout"));
-        window.location.href = `https://192.168.2.221/authify/public/logout?key=${encodeURIComponent(
-            token
-        )}&redirect=${encodeURIComponent(route("dashboard"))}`;
+   const logout = () => {
+        localStorage.clear();
+        sessionStorage.clear();
+
+        window.location.href = route("logout"); // Laravel handles SSO redirect
     };
 
     const formattedAppName = display_name

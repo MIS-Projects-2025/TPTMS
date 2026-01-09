@@ -53,7 +53,7 @@ useEffect(() => {
 
     try {
         // Subscribe to private user channel
-        const channel = window.echo.private(`users.${userId}`);
+        const channel = echo.private(`users.${userId}`);
         console.log(`🎯 Joining channel: users.${userId}`);
 
         channelRef.current = channel;

@@ -3,13 +3,13 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Support\Facades\Log;
 
-class TicketCreatedNotification extends Notification implements ShouldBroadcast
+class TicketCreatedNotification extends Notification implements ShouldBroadcastNow
 {
     // use Queueable;
 

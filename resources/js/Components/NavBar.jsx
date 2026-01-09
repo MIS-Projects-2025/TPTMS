@@ -6,13 +6,11 @@ import { NotificationProvider } from "@/Context/NotificationContext";
 export default function NavBar() {
     const { emp_data } = usePage().props;
 
-    const logout = () => {
-        const token = localStorage.getItem("authify_session");
-        localStorage.removeItem("authify_session");
-        router.get(route("logout"));
-        window.location.href = `https://192.168.2.221/authify/public/logout?key=${encodeURIComponent(
-            token
-        )}&redirect=${encodeURIComponent(route("dashboard"))}`;
+  const logout = () => {
+        localStorage.clear();
+        sessionStorage.clear();
+
+        window.location.href = route("logout");
     };
     return (
         <nav className="mt-2">
