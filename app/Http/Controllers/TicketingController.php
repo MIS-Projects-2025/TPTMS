@@ -119,34 +119,41 @@ class TicketingController extends Controller
             ->with('success', 'Ticket created successfully! Ticket ID: ' . $ticketId);
     }
 
-
-    public function getTicketsDataTable(Request $request)
-    {
-        $empData = session('emp_data');
-        if (!$empData) return redirect()->route('login');
-
-        $userRoles = $this->getUserAccountType($empData);
-
-        $filters = [
-            'page' => (int) $request->input('page', 1),
-            'pageSize' => (int) $request->input('pageSize', 10),
-            'search' => trim($request->input('search', '')),
-            'sortField' => $request->input('sortField', 'created_at'),
-            'sortOrder' => $request->input('sortOrder', 'desc'),
-            'status' => $request->input('status', 'all'),
-            'project' => $request->input('project', ''),
-        ];
-
-        $result = $this->ticketService->getTicketsDataTable($filters, $empData, $userRoles);
-
-        return Inertia::render('Ticketing/Table', [
-            'tickets' => $result['tickets'],
-            'pagination' => $result['pagination'],
-            'projects' => $result['projects'],
-            'statusCounts' => $result['statusCounts'],
-            'filters' => $result['filters'],
-        ])->with('flash', ['message' => 'Tickets loaded successfully']);
+public function getTicketsDataTable(Request $request)
+{
+    $empData = session('emp_data');
+    if (!$empData) {
+        return redirect()->route('login');
     }
+
+    $userRoles = $this->getUserAccountType($empData);
+
+    // Decode filters from the 'q' parameter (base64 JSON)
+    $encodedFilters = $request->input('q', '');
+    $filters = $this->decodeFilters($encodedFilters);
+
+    // Set default values if not provided
+    $filters = array_merge([
+        'page' => 1,
+        'pageSize' => 10,
+        'search' => '',
+        'sortField' => 'created_at',
+        'sortOrder' => 'desc',
+        'status' => 'all',
+        'project' => '',
+    ], $filters);
+
+    $result = $this->ticketService->getTicketsDataTable($filters, $empData, $userRoles);
+
+    return Inertia::render('Ticketing/Table', [
+        'tickets' => $result['tickets'],
+        'pagination' => $result['pagination'],
+        'projects' => $result['projects'],
+        'statusCounts' => $result['statusCounts'],
+        'filters' => $result['filters'],
+    ])->with('flash', ['message' => 'Tickets loaded successfully']);
+}
+
     public function getTicketsCount(Request $request)
     {
         $empData = session('emp_data');
@@ -539,5 +546,25 @@ class TicketingController extends Controller
         }
 
         return $roles ?: ['UNKNOWN'];
+    }
+     private function decodeFilters(string $encodedFilters): array
+    {
+        if (empty($encodedFilters)) {
+            return [];
+        }
+
+        try {
+            $decoded = base64_decode($encodedFilters, true);
+
+            if ($decoded === false) {
+                return [];
+            }
+
+            $filters = json_decode($decoded, true);
+
+            return is_array($filters) ? $filters : [];
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 }

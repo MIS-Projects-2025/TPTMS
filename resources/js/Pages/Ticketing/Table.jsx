@@ -156,23 +156,28 @@ export default function TicketTable() {
             clearTimeout(searchTimeoutRef.current);
         }
 
-        searchTimeoutRef.current = setTimeout(() => {
-            setLoading(true);
+       searchTimeoutRef.current = setTimeout(() => {
+    setLoading(true);
 
-            const params = {
-                page: 1,
-                pageSize: pagination?.per_page || 10,
-                search: value,
-                project: filters?.project || "",
-                status: filters?.status || "",
-                sortField: filters?.sortField || "created_at",
-                sortOrder: filters?.sortOrder || "desc",
-            };
+    const params = {
+        page: 1,
+        pageSize: pagination?.per_page || 10,
+        search: value,
+        project: filters?.project || "",
+        status: filters?.status || "",
+        sortField: filters?.sortField || "created_at",
+        sortOrder: filters?.sortOrder || "desc",
+    };
 
-            router.get(route("tickets.datatable"), params, {
-                onFinish: () => setLoading(false),
-            });
-        }, 500);
+    const encodedParams = btoa(JSON.stringify(params));
+
+    router.get(
+        route("tickets.datatable"),
+        { q: encodedParams },
+        { onFinish: () => setLoading(false) }
+    );
+}, 500);
+
     };
 
     // Handle project filter
@@ -205,26 +210,28 @@ export default function TicketTable() {
         // console.log("🔄 Changing filter to:", filterType);
         setLoading(true);
 
-        const params = {
-            page: 1,
-            pageSize: pagination?.per_page || 10,
-            search: filters?.search || "",
-            project: filters?.project || "",
-            status: filterType, // Sends: 'all', 'active', 'urgent', 'in_progress', 'closed'
-            sortField: filters?.sortField || "created_at",
-            sortOrder: filters?.sortOrder || "desc",
-        };
+      const params = {
+    page: 1,
+    pageSize: pagination?.per_page || 10,
+    search: filters?.search || "",
+    project: filters?.project || "",
+    status: filterType,
+    sortField: filters?.sortField || "created_at",
+    sortOrder: filters?.sortOrder || "desc",
+};
 
+const encodedParams = btoa(JSON.stringify(params));
         // console.log("📤 Sending params:", params);
 
-        router.get(route("tickets.datatable"), params, {
-            preserveState: true,
-            preserveScroll: true,
-            onFinish: () => {
-                // console.log("✅ Filter applied");
-                setLoading(false);
-            },
-        });
+       router.get(
+    route("tickets.datatable"),
+    { q: encodedParams },
+    {
+        preserveState: true,
+        preserveScroll: true,
+        onFinish: () => setLoading(false),
+    });
+       
     };
 
     // Handle action navigation
@@ -532,10 +539,10 @@ export default function TicketTable() {
                                     ))}
                                 </Select>
 
-                                <button className="btn btn-outline btn-sm flex items-center gap-2">
+                                {/* <button className="btn btn-outline btn-sm flex items-center gap-2">
                                     <Filter className="w-4 h-4" />
                                     Filters
-                                </button>
+                                </button> */}
                             </Space>
                         </div>
 
@@ -553,6 +560,8 @@ export default function TicketTable() {
                                         showSizeChanger: true,
                                         showQuickJumper: true,
                                         pageSizeOptions: ["10", "20", "50"],
+                                        showTotal: (total, range) =>
+                                             `Showing ${range[0]}-${range[1]} of ${total} entries`,
                                     }}
                                     onChange={handleTableChange}
                                     bordered

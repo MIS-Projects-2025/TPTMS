@@ -158,6 +158,7 @@ class TicketService
 
     public function getTicketsDataTable(array $filters, array $empData, array $userRoles)
     {
+        // dd($filters);
         $userId = $empData['emp_id'];
         $page = $filters['page'] ?? 1;
         $pageSize = $filters['pageSize'] ?? 10;
@@ -184,6 +185,7 @@ class TicketService
         $query = $this->applyStatusFilter($query, $status);
         if ($search) {
             $query->where(fn($q) => $q->where('TICKET_ID', 'like', "%{$search}%")
+            ->orWhere('EMPNAME', 'like', "%{$search}%")
                 ->orWhere('PROJECT_NAME', 'like', "%{$search}%")
                 ->orWhere('DETAILS', 'like', "%{$search}%"));
         }
