@@ -49,7 +49,7 @@ class AuthMiddleware
         }
 
         // 🔹 4️⃣ Access control (customize your rules)
-      $canAccess = $currentUser->emp_position > 2 ||
+      $canAccess = $currentUser->emp_position >= 2 ||
                 stripos($currentUser->emp_jobtitle, 'programmer') !== false ||
                 stripos($currentUser->emp_jobtitle, 'MIS Senior Supervisor') !== false ||
                 DB::connection('projects')->table('project_list')

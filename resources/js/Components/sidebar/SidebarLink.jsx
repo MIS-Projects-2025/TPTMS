@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, usePage } from "@inertiajs/react";
+import { Badge } from "antd";
 
 const SidebarLink = ({
     href,
@@ -7,47 +8,45 @@ const SidebarLink = ({
     icon,
     notifications = 0,
     isSidebarOpen,
+    activeColor = "#1890ff", // Ant Design primary color
 }) => {
     const { url } = usePage();
     const isActive = url === new URL(href, window.location.origin).pathname;
 
-    // Determine theme
-    const theme = localStorage.getItem("theme") === "dark" ? "dark" : "light";
-
-    // Theme-aware classes
-    const hoverBg =
-        theme === "dark" ? "hover:bg-gray-200" : "hover:bg-gray-700";
-    const hoverText =
-        theme === "dark" ? "hover:text-black" : "hover:text-white";
-    const activeBg = theme === "dark" ? "bg-gray-200" : "bg-gray-700";
-    const activeText = theme === "dark" ? "text-black" : "text-white";
-
     return (
         <Link
             href={href}
-            className={`relative flex items-center px-4 py-2 transition-colors duration-150 rounded-md
-                ${
-                    isActive
-                        ? `${activeBg} ${activeText}`
-                        : `${hoverBg} ${hoverText}`
-                }`}
-            title={!isSidebarOpen ? label : ""} // tooltip on hover if collapsed
+            className={`relative flex items-center px-4 py-2 rounded-md transition-all duration-150
+                ${isActive ? "bg-base-200 font-semibold" : "hover:bg-base-200"}
+            `}
+            title={!isSidebarOpen ? label : ""}
+            style={{
+                borderLeft: isActive
+                    ? `4px solid ${activeColor}`
+                    : "4px solid transparent",
+                color: isActive ? activeColor : "inherit",
+            }}
         >
-            {/* Icon always visible */}
-            <span className="w-6 h-6">{icon}</span>
+            {/* Icon */}
+            <span className="w-6 h-6 flex items-center justify-center">
+                {icon}
+            </span>
 
-            {/* Label (only if sidebar is expanded) */}
-            {isSidebarOpen && <p className="ml-2">{label}</p>}
+            {/* Label */}
+            {isSidebarOpen && <p className="ml-3 truncate">{label}</p>}
 
             {/* Notifications */}
             {notifications > 0 && (
-                <span
-                    className={`ml-auto text-xs px-2 py-1 rounded-md text-white bg-red-600 ${
-                        !isSidebarOpen ? "absolute right-2" : ""
+                <Badge
+                    count={notifications > 99 ? "99+" : notifications}
+                    size="small"
+                    className={`ml-auto ${
+                        !isSidebarOpen
+                            ? "absolute right-2 top-1/2 -translate-y-1/2"
+                            : ""
                     }`}
-                >
-                    {notifications > 99 ? "99+" : notifications}
-                </span>
+                    style={{ backgroundColor: "#ff4d4f" }}
+                />
             )}
         </Link>
     );

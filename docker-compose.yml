@@ -1,6 +1,32 @@
+version: "3.9"
+
 services:
+    app:
+        build: .
+        container_name: laravel_app
+        volumes:
+            - .:/var/www
+        command: php artisan serve --host=0.0.0.0 --port=8000
+        ports:
+            - "8000:8000"
+        depends_on:
+            - soketi
+
+    scheduler:
+        build: .
+        container_name: laravel_scheduler
+        volumes:
+            - .:/var/www
+        depends_on:
+            - app
+        restart: unless-stopped
+        # Run Laravel schedule in a loop every minute
+        command: >
+            sh -c "while true; do php /var/www/artisan schedule:run --verbose --no-interaction; sleep 60; done"
+
     soketi:
         image: quay.io/soketi/soketi:latest
+        container_name: soketi
         ports:
             - "6001:6001"
             - "9601:9601"
