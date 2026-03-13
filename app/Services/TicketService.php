@@ -1313,28 +1313,28 @@ class TicketService
         return $query;
     }
 
-    private function applyRoleVisibility($query, $userRoles, $userId, $testerTicketIds, $approverIds)
-    {
-        return $query->where(function ($q) use ($userRoles, $userId, $testerTicketIds, $approverIds) {
-            if ($this->isProgrammerOrSupervisor($userRoles)) {
-                $q->orWhereIn('STATUS', [TicketConstants::STATUS_NEW]);
-            }
-            if ($approverIds) {
-                $q->orWhereIn('EMPLOYID', $approverIds);
-            }
-            if (in_array('OD', $userRoles)) {
-                $q->orWhereRaw('1=1');
-            }
-            if (in_array('MIS_SUPERVISOR', $userRoles)) {
-                $q->orWhere('STATUS', TicketConstants::STATUS_APPROVED);
-            }
-            $q->orWhere('EMPLOYID', $userId)->orWhere('ASSIGNED_TO', $userId);
+  private function applyRoleVisibility($query, $userRoles, $userId, $testerTicketIds, $approverIds)
+{
+    return $query->where(function ($q) use ($userRoles, $userId, $testerTicketIds, $approverIds) {
+        if ($this->isProgrammerOrSupervisor($userRoles)) {
+            // Programmers and MIS Supervisors can see all tickets
+            $q->orWhereRaw('1=1');
+            return;
+        }
+        if ($approverIds) {
+            $q->orWhereIn('EMPLOYID', $approverIds);
+        }
+        if (in_array('OD', $userRoles)) {
+            $q->orWhereRaw('1=1');
+            return;
+        }
+        $q->orWhere('EMPLOYID', $userId)->orWhere('ASSIGNED_TO', $userId);
 
-            if ($testerTicketIds) {
-                $q->orWhereIn('ID', $testerTicketIds);
-            }
-        });
-    }
+        if ($testerTicketIds) {
+            $q->orWhereIn('ID', $testerTicketIds);
+        }
+    });
+}
 
     private function applySorting($query, $sortField, $sortOrder)
     {

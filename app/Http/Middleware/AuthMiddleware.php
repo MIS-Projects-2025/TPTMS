@@ -49,12 +49,23 @@ class AuthMiddleware
         }
 
         // 🔹 4️⃣ Access control (customize your rules)
-      $canAccess = $currentUser->emp_position >= 2 ||
-                stripos($currentUser->emp_jobtitle, 'programmer') !== false ||
-                stripos($currentUser->emp_jobtitle, 'MIS Senior Supervisor') !== false ||
-                DB::connection('projects')->table('project_list')
-                ->where('PROJ_HANDLER', $currentUser->emp_id)
-                ->exists();
+        // Check if employee is allowed based on emp_from
+        $isFromAllowed = $currentUser->emp_from === NULL;
+
+        // Check role-based access
+        $hasRoleAccess =
+            $currentUser->emp_position >= 2 ||
+            stripos($currentUser->emp_jobtitle, 'programmer') !== false ||
+            stripos($currentUser->emp_jobtitle, 'MIS Senior Supervisor') !== false;
+
+        // Check if user is project handler
+        $isProjectHandler = DB::connection('projects')
+            ->table('project_list')
+            ->where('PROJ_HANDLER', $currentUser->emp_id)
+            ->exists();
+
+        // Final access decision
+        $canAccess = $isFromAllowed && ($hasRoleAccess || $isProjectHandler);
         if (!$canAccess) {
             session()->forget('emp_data');
             session()->flush();
@@ -66,6 +77,14 @@ class AuthMiddleware
             ])->toResponse($request)->setStatusCode(403);
         }
 
+            // ✅ Assign system role if Programmer
+            $systemRole = null;
+            if (
+                stripos($currentUser->emp_jobtitle, 'programmer') !== false ||
+                stripos($currentUser->emp_jobtitle, 'MIS Senior Supervisor') !== false
+            ) {
+                $systemRole = 'Programmer';
+            }
         // 🔹 5️⃣ Set session once
         session(['emp_data' => [
             'token'         => $currentUser->token,
@@ -77,6 +96,7 @@ class AuthMiddleware
             'emp_prodline'  => $currentUser->emp_prodline,
             'emp_station'   => $currentUser->emp_station,
             'emp_position'  => $currentUser->emp_position,
+              'emp_system_role' => $systemRole,
             'generated_at'  => $currentUser->generated_at,
         ]]);
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { usePage, Link } from "@inertiajs/react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 export default function Dropdown({
     label,
@@ -55,54 +56,27 @@ export default function Dropdown({
             >
                 <div className="flex items-center space-x-2">
                     {icon && (
-                        <span className="w-6 h-6 flex items-center justify-center">
+                        <span className="w-5 h-5 flex items-center justify-center">
                             {icon}
                         </span>
                     )}
                     {isSidebarOpen && (
-                        <span className="ml-2 truncate">{label}</span>
+                        <span className="ml-2 text-sm truncate">{label}</span>
                     )}
                 </div>
 
                 {isSidebarOpen && (
                     <div className="flex items-center space-x-2">
                         {notification && typeof notification === "number" && (
-                            <span className="bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+                            <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
                                 {notification > 99 ? "99+" : notification}
                             </span>
                         )}
-
-                        <span className="flex items-center justify-center">
+                        <span className="text-gray-200">
                             {open ? (
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    strokeWidth="1.5"
-                                    stroke="currentColor"
-                                    className="w-5 h-5"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="m4.5 15.75 7.5-7.5 7.5 7.5"
-                                    />
-                                </svg>
+                                <ChevronDown className="w-4 h-4" />
                             ) : (
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    strokeWidth="1.5"
-                                    stroke="currentColor"
-                                    className="w-5 h-5"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="m19.5 8.25-7.5 7.5-7.5-7.5"
-                                    />
-                                </svg>
+                                <ChevronRight className="w-4 h-4" />
                             )}
                         </span>
                     </div>
@@ -111,7 +85,10 @@ export default function Dropdown({
 
             {/* Children */}
             {isSidebarOpen && open && (
-                <div className="mt-1 space-y-1">
+                <div className="relative mt-1 space-y-1 pl-4">
+                    {/* Vertical connecting line */}
+                    <div className="absolute left-2 top-2 bottom-2 w-[2px] bg-gray-600 rounded" />
+
                     {links.map((link, idx) => {
                         const active = isActiveLink(link.href);
 
@@ -119,7 +96,7 @@ export default function Dropdown({
                             <Link
                                 key={idx}
                                 href={link.href}
-                                className={`flex items-center justify-between w-full pl-8 pr-3 py-2 rounded-md transition-all
+                                className={`relative flex items-center justify-between w-full pl-8 pr-3 py-2 rounded-md transition-all
                                     ${
                                         active
                                             ? "bg-base-200 font-semibold"
@@ -127,21 +104,29 @@ export default function Dropdown({
                                     }
                                 `}
                                 style={{
-                                    borderLeft: active
-                                        ? `4px solid ${activeColor}`
-                                        : "4px solid transparent",
                                     color: active ? activeColor : "inherit",
                                 }}
                             >
+                                {/* Dot indicator on the vertical line */}
+                                <span
+                                    className="absolute left-[13px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 transition-colors duration-200"
+                                    style={{
+                                        backgroundColor: active
+                                            ? activeColor
+                                            : "oklch(var(--b3))",
+                                        borderColor: active
+                                            ? activeColor
+                                            : "oklch(var(--bc) / 0.3)",
+                                    }}
+                                />
+
                                 <div className="flex items-center space-x-2">
-                                    {link.icon ? (
-                                        <span className="w-5 h-5 flex items-center justify-center">
+                                    {link.icon && (
+                                        <span className="w-4 h-4 flex items-center justify-center">
                                             {link.icon}
                                         </span>
-                                    ) : (
-                                        <span className="w-4 h-4" />
                                     )}
-                                    <span className="truncate">
+                                    <span className="text-xs truncate">
                                         {link.label}
                                     </span>
                                 </div>

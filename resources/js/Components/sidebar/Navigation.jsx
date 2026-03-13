@@ -15,6 +15,7 @@ import { Avatar, Badge } from "antd";
 export default function NavLinks({ isSidebarOpen }) {
     const { emp_data } = usePage().props;
     const [ticketCount, setTicketCount] = useState(0);
+    console.log(emp_data);
 
     useEffect(() => {
         axios
@@ -62,7 +63,10 @@ export default function NavLinks({ isSidebarOpen }) {
                     <span className="flex items-center justify-between w-full">
                         <span>Tickets</span>
                         {ticketCount > 0 && (
-                            <Badge dot={ticketCount > 0} className="ml-2" />
+                            <div
+                                aria-label="status"
+                                className="status status-error status-md ml-2"
+                            ></div>
                         )}
                     </span>
                 }

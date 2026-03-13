@@ -5,6 +5,7 @@ import {
     FilePdfOutlined,
     FileWordOutlined,
     FilePptOutlined,
+    FileExcelOutlined,
     FileImageOutlined,
     DeleteOutlined,
     EyeOutlined,
@@ -22,7 +23,6 @@ const AttachmentUpload = ({
     const [fileList, setFileList] = useState([]);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState("");
-    const [editableAttachments, setEditableAttachments] = useState([]);
 
     const allowedTypes = [
         "image/png",
@@ -34,6 +34,8 @@ const AttachmentUpload = ({
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ];
 
     const beforeUpload = (file) => {
@@ -45,7 +47,7 @@ const AttachmentUpload = ({
             message.error("File must be smaller than 10MB");
             return Upload.LIST_IGNORE;
         }
-        return false;
+        return false; // prevent automatic upload
     };
 
     const handleChange = ({ fileList: newList }) => {
@@ -53,8 +55,8 @@ const AttachmentUpload = ({
             (file, index, self) =>
                 index ===
                 self.findIndex(
-                    (f) => f.name === file.name && f.size === file.size
-                )
+                    (f) => f.name === file.name && f.size === file.size,
+                ),
         );
         setFileList(uniqueFiles);
 
@@ -109,6 +111,13 @@ const AttachmentUpload = ({
             fileType?.includes("presentation")
         )
             return <FilePptOutlined className="text-xl text-orange-600" />;
+        if (
+            fileType?.includes("excel") ||
+            fileType === "application/vnd.ms-excel" ||
+            fileType ===
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+            return <FileExcelOutlined className="text-xl text-green-600" />;
         return <FileOutlined className="text-xl text-gray-500" />;
     };
 
@@ -127,8 +136,8 @@ const AttachmentUpload = ({
         const fileUrl = isExisting
             ? file.url
             : file.originFileObj
-            ? URL.createObjectURL(file.originFileObj)
-            : null;
+              ? URL.createObjectURL(file.originFileObj)
+              : null;
 
         return (
             <div
@@ -224,7 +233,7 @@ const AttachmentUpload = ({
                             onChange={handleChange}
                             beforeUpload={beforeUpload}
                             showUploadList={false}
-                            accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.ppt,.pptx"
+                            accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
                         >
                             <div className="w-full border-2 border-dashed border-base-300 rounded-lg p-8 hover:border-primary hover:bg-base-200/50 transition-all cursor-pointer h-full flex items-center justify-center">
                                 <div className="flex flex-col items-center gap-2">
@@ -233,8 +242,8 @@ const AttachmentUpload = ({
                                         Click or drag files to upload
                                     </p>
                                     <p className="text-xs text-base-content/60 mt-1">
-                                        Supports: Images, PDF, Word, PowerPoint
-                                        (Max 10MB)
+                                        Supports: Images, PDF, Word, PowerPoint,
+                                        Excel (Max 10MB)
                                     </p>
                                 </div>
                             </div>
@@ -244,9 +253,7 @@ const AttachmentUpload = ({
 
                 {hasFiles && (
                     <div
-                        className={`order-1 lg:order-2 ${
-                            viewOnly ? "lg:col-span-2" : ""
-                        }`}
+                        className={`order-1 lg:order-2 ${viewOnly ? "lg:col-span-2" : ""}`}
                     >
                         <div className="mb-3">
                             <p className="text-xs text-base-content/60">
@@ -257,7 +264,7 @@ const AttachmentUpload = ({
                         </div>
                         <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                             {displayFiles.map((file, index) =>
-                                renderFileItem(file, viewOnly, index)
+                                renderFileItem(file, viewOnly, index),
                             )}
                         </div>
                     </div>
