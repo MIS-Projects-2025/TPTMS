@@ -165,7 +165,7 @@ export default function RealtimeNotificationDiagram() {
                         {
                             step: "2",
                             desc: "Redirect to SSO server",
-                            tech: "http://192.168.2.221/authify",
+                            tech: "http://192.168.2.221:8080/authify",
                         },
                         {
                             step: "3",
