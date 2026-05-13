@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { router } from "@inertiajs/react";
+
 import { message } from "antd";
 import axios from "axios";
 import dayjs from "dayjs";
@@ -10,7 +10,7 @@ export default function useProjectEdit(
     project,
     form,
     onClose,
-    mode = "edit"
+    mode = "edit",
 ) {
     const [loading, setLoading] = useState(false);
     const [handlerOptions, setHandlerOptions] = useState([]);
@@ -80,7 +80,7 @@ export default function useProjectEdit(
                 let handlers = res.data.handlers || [];
                 currentHandlers.forEach((currentHandler) => {
                     const exists = handlers.find(
-                        (h) => h.EMPLOYID === currentHandler.emp_id
+                        (h) => h.EMPLOYID === currentHandler.emp_id,
                     );
                     if (!exists) {
                         handlers.push({
@@ -142,54 +142,33 @@ export default function useProjectEdit(
         };
 
         // console.log("Submitting payload:", payload);
-
         try {
+            let response;
+
             if (mode === "create") {
-                // Create new project
-                router.post(route("project.store"), payload, {
-                    preserveState: true,
-                    onSuccess: () => {
-                        message.success("Project created successfully!");
-                        handleClose();
-                    },
-                    onError: (errors) => {
-                        console.error("Backend errors:", errors);
-                        const errorMessage =
-                            Object.values(errors).flat().join(", ") ||
-                            "Failed to create project";
-                        message.error(errorMessage);
-                    },
-                    onFinish: () => setLoading(false),
-                });
+                response = await axios.post(route("project.store"), payload);
             } else {
-                // Update existing project
-                router.patch(
+                response = await axios.patch(
                     route("project.update", { project: project.id }),
                     payload,
-                    {
-                        preserveState: true,
-                        onSuccess: () => {
-                            message.success("Project updated successfully!");
-                            handleClose();
-                        },
-                        onError: (errors) => {
-                            console.error("Backend errors:", errors);
-                            const errorMessage =
-                                Object.values(errors).flat().join(", ") ||
-                                "Failed to update project";
-                            message.error(errorMessage);
-                        },
-                        onFinish: () => setLoading(false),
-                    }
                 );
             }
-        } catch (error) {
-            console.error("Frontend error:", error);
-            message.error(
-                `An error occurred while ${
-                    mode === "create" ? "creating" : "updating"
-                } project`
+
+            message.success(
+                mode === "create"
+                    ? "Project created successfully!"
+                    : "Project updated successfully!",
             );
+
+            handleClose();
+        } catch (error) {
+            console.error("Backend error:", error);
+
+            const errorMessage =
+                error.response?.data?.message || "Failed to process project";
+
+            message.error(errorMessage);
+        } finally {
             setLoading(false);
         }
     };

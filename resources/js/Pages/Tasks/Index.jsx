@@ -11,7 +11,7 @@ import {
     LeftOutlined,
 } from "@ant-design/icons";
 import TaskLayout from "@/Layouts/TaskLayout";
-import TaskNavbar from "@/Components/TaskNavBar";
+import TaskNavbar from "@/Components/TaskNavbar";
 import useTask from "@/Hooks/useTask";
 import axios from "axios";
 import TaskCardView from "./TaskCardView";
@@ -60,7 +60,7 @@ const TaskIndex = () => {
         } catch (error) {
             console.error("Task creation error:", error);
             message.error(
-                error.response?.data?.error || "Error creating tasks"
+                error.response?.data?.error || "Error creating tasks",
             );
         }
     };
@@ -97,7 +97,7 @@ const TaskIndex = () => {
         } catch (error) {
             console.error("Status update error:", error);
             message.error(
-                error.response?.data?.error || "Failed to update task"
+                error.response?.data?.error || "Failed to update task",
             );
         } finally {
             setLoading(false);
@@ -120,7 +120,8 @@ const TaskIndex = () => {
                 } catch (error) {
                     console.error("Complete task error:", error);
                     message.error(
-                        error.response?.data?.error || "Failed to complete task"
+                        error.response?.data?.error ||
+                            "Failed to complete task",
                     );
                 } finally {
                     setLoading(false);
@@ -239,7 +240,7 @@ const TaskIndex = () => {
                 icon: <HistoryOutlined />,
                 label: "View History",
                 onClick: () => handleViewHistory(task.id),
-            }
+            },
         );
 
         return items;

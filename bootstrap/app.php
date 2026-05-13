@@ -8,17 +8,25 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__ . '/../routes/web.php',
         commands: __DIR__ . '/../routes/console.php',
-        channels: __DIR__ . '/../routes/channels.php',  // Keep this - it defines channel authorization
+        channels: __DIR__ . '/../routes/channels.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        
+        $middleware->encryptCookies(except: [
+            'sso_token',
+        ]);
+          $middleware->validateCsrfTokens(except: [
+        'TPTMS/broadcasting/auth',
+    ]);
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
-            \App\Http\Middleware\CorsMiddleware::class,
+              \App\Http\Middleware\CorsMiddleware::class,
             \App\Http\Middleware\AuthMiddleware::class,
-            // \App\Http\Middleware\ProgrammerMiddleware::class
         ]);
+
+        //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

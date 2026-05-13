@@ -23,9 +23,10 @@ class AuthenticationController extends Controller
 
         // Build redirect back after SSO logout
         $redirectUrl = urlencode(route('dashboard'));
+  // Forget the sso_token cookie too
+    $expiredCookie = cookie()->forget('sso_token');
 
-        return redirect(
-            "http://192.168.1.27:8080/authify/public/logout?token={$token}&redirect={$redirectUrl}"
-        );
+    return redirect("http://192.168.2.221:8200/logout?token={$token}&redirect={$redirectUrl}")
+        ->withCookie($expiredCookie); // ← add this
     }
 }

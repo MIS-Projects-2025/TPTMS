@@ -4,7 +4,7 @@ return [
     'paths' => ['api/*', 'TPTMS/*', 'broadcasting/auth', 'tickets/*'],
     'allowed_methods' => ['*'],
     'allowed_origins' => [
-        'https://192.168.2.221:85',
+        'https://192.168.2.221:8192',
         'https://192.168.2.221:8080',
     ],
 

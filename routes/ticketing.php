@@ -8,6 +8,7 @@ use App\Http\Middleware\CorsMiddleware;
 $app_name = $app_name ?? env('APP_NAME', 'app');
 
 Route::prefix($app_name)
+->middleware(AuthMiddleware::class)
     ->group(function () {
 
         // Ticket Routes

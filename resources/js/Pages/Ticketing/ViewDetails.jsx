@@ -49,6 +49,7 @@ const ViewDetails = () => {
         Closed: "bg-green-700",
         Rejected: "bg-red-600",
         "On Hold": "bg-yellow-500",
+        Returned: "bg-red-600",
     };
 
     const formatDate = (dateString) => {
@@ -198,7 +199,7 @@ const ViewDetails = () => {
                                                     >
                                                         {emp.display}
                                                     </span>
-                                                )
+                                                ),
                                             )}
                                         </div>
                                     </div>
@@ -249,7 +250,7 @@ const ViewDetails = () => {
                                         url: `/storage/${file.FILE_PATH}`,
                                         path: `/storage/${file.FILE_PATH}`,
                                         uid: `backend-${file.ID}`,
-                                    })
+                                    }),
                                 )}
                             />
                         </div>
@@ -262,7 +263,7 @@ const ViewDetails = () => {
                                 </p>
                                 <p className="text-sm">
                                     {new Date(
-                                        ticket.CREATED_AT
+                                        ticket.CREATED_AT,
                                     ).toLocaleString()}
                                 </p>
                             </div>
@@ -273,7 +274,7 @@ const ViewDetails = () => {
                                     </p>
                                     <p className="text-sm">
                                         {new Date(
-                                            ticket.RESOLVED_AT
+                                            ticket.RESOLVED_AT,
                                         ).toLocaleString()}
                                     </p>
                                 </div>
@@ -285,7 +286,7 @@ const ViewDetails = () => {
                                     </p>
                                     <p className="text-sm">
                                         {new Date(
-                                            ticket.CLOSED_AT
+                                            ticket.CLOSED_AT,
                                         ).toLocaleString()}
                                     </p>
                                 </div>

@@ -101,7 +101,7 @@ return [
         ],
         'masterlist' => [
             'driver' => 'mysql',
-            'url' => env('ADB_URL'),
+            'url' => env('MDB_URL'),
             'host' => env('MDB_HOST', '127.0.0.1'),
             'port' => env('MDB_PORT', '3306'),
             'database' => env('MDB_DATABASE', 'laravel'),

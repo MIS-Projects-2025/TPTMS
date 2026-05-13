@@ -15,28 +15,29 @@ Pusher.logToConsole = true;
 window.echo = new Echo({
     broadcaster: "pusher",
     key: "34bt7ihktudxw8thfeuy",
-    cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER || "mt1", 
+    cluster: "mt1",
     wsHost: "192.168.2.221",
-    wsPort: 85,      // Apache SSL port
-    wssPort: 85,     // Same as above
-    forceTLS: true,
-    enabledTransports: ["ws", "wss"],
-    authEndpoint: "https://192.168.2.221:85/TPTMS/broadcasting/auth",
+    wsPort: 6001, // Apache SSL port
+    wssPort: 6001, // Same as above
+    forceTLS: false,
+    disableStats: true,
+    enabledTransports: ["ws"],
+    authEndpoint: "http://192.168.2.221:8192/TPTMS/broadcasting/auth",
     auth: {
         headers: {
-            "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.content,
+            "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')
+                ?.content,
             Accept: "application/json",
         },
         withCredentials: true,
     },
 });
 
-
 // Test connection
-window.echo.connector.pusher.connection.bind('connected', () => {
-    console.log('✅ Connected to Soketi WebSocket server!');
+window.echo.connector.pusher.connection.bind("connected", () => {
+    console.log("✅ Connected to Soketi WebSocket server!");
 });
 
-window.echo.connector.pusher.connection.bind('error', (err) => {
-    console.error('❌ WebSocket connection error:', err);
+window.echo.connector.pusher.connection.bind("error", (err) => {
+    console.error("❌ WebSocket connection error:", err);
 });
