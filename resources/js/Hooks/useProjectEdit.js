@@ -11,6 +11,7 @@ export default function useProjectEdit(
     form,
     onClose,
     mode = "edit",
+    onSuccess,
 ) {
     const [loading, setLoading] = useState(false);
     const [handlerOptions, setHandlerOptions] = useState([]);
@@ -161,6 +162,7 @@ export default function useProjectEdit(
             );
 
             handleClose();
+            if (onSuccess) onSuccess();
         } catch (error) {
             console.error("Backend error:", error);
 

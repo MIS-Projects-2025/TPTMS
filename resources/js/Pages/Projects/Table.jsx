@@ -583,7 +583,7 @@ export default function ProjectsTable() {
                 onClose={() => setShowEditDrawer(false)}
                 project={selectedProject}
                 mode={drawerMode}
-                onUpdated={() => {
+                onSuccess={() => {
                     // Refetch table data after edit/create
                     const encoded = encodeParams(filters);
                     setLoading(true);

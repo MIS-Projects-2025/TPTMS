@@ -56,7 +56,7 @@ export default function ProjectEditDrawer({
         handleDepartmentChange,
         getColorFromString,
         mode: drawerMode,
-    } = useProjectEdit(isOpen, project, form, onClose, mode);
+    } = useProjectEdit(isOpen, project, form, onClose, mode, onSuccess);
     // console.log(handlerOptions, "handlerOptions");
 
     const isCreateMode = drawerMode === "create";
