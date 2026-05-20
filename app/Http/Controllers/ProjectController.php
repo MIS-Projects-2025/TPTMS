@@ -108,8 +108,10 @@ class ProjectController extends Controller
                 $empData['emp_id']
             );
 
-            return redirect()->route('project.list')
-                ->with('success', 'Project updated successfully');
+            return response()->json([
+                'success' => true,
+                'message' => 'Project updated successfully',
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
