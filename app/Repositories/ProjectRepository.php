@@ -280,6 +280,22 @@ class ProjectRepository
             ->orderBy('EMPNAME')
             ->get();
     }
+
+    public function getProgrammers()
+    {
+        return DB::connection('masterlist')
+            ->table('employee_masterlist')
+            ->whereRaw('UPPER(DEPARTMENT) = ?', ['MIS'])
+            ->where(function ($q) {
+                $q->whereRaw('UPPER(JOB_TITLE) LIKE ?', ['%PROGRAMMER%'])
+                  ->orWhereRaw('UPPER(JOB_TITLE) LIKE ?', ['%DEVELOPER%']);
+            })
+            ->where('ACCSTATUS', 1)
+            ->whereNot('EMPLOYID', '0')
+            ->select('EMPLOYID', 'EMPNAME', 'JOB_TITLE')
+            ->orderBy('EMPNAME')
+            ->get();
+    }
     public function getAllDepartments()
     {
         return DB::connection('masterlist')

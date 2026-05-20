@@ -75,6 +75,7 @@ class ProjectController extends Controller
             $result = $this->projectService->getProjectsDataTable($request);
 
             $result['showAllDepartments'] = $showAllDepartments;
+            $result['canEditAssignedTo'] = $this->isMISSeniorSupervisor($empData);
 
             return Inertia::render('Projects/Table', $result)
                 ->with('flash', ['message' => 'Projects loaded successfully']);
@@ -116,6 +117,54 @@ class ProjectController extends Controller
             ], 500);
         }
     }
+    public function getProgrammers()
+    {
+        try {
+            $programmers = $this->projectService->getProgrammers();
+            return response()->json([
+                'success' => true,
+                'programmers' => $programmers,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function updateAssignedTo(Request $request, $projectId)
+    {
+        try {
+            $empData = session('emp_data');
+            if (!$empData) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            if (!$this->isMISSeniorSupervisor($empData)) {
+                return response()->json(['error' => 'Forbidden: Only MIS Senior Supervisor can reassign projects'], 403);
+            }
+
+            $validated = $request->validate([
+                'assigned_ids' => 'required|array',
+                'assigned_ids.*' => 'string|max:20',
+            ]);
+
+            $this->projectService->updateAssignedTo(
+                $projectId,
+                $validated['assigned_ids'],
+                $empData['emp_id']
+            );
+
+            return response()->json(['success' => true, 'message' => 'Assigned programmers updated successfully']);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update assigned programmers: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getHandlerOptionsByDepartment($department)
     {
         try {
@@ -172,6 +221,16 @@ class ProjectController extends Controller
         $jobTitle = strtolower($empData['emp_jobtitle'] ?? '');
 
         return $dept === 'MIS' && strpos($jobTitle, 'supervisor') !== false;
+    }
+
+    private function isMISSeniorSupervisor($empData)
+    {
+        $dept = strtoupper($empData['emp_dept'] ?? '');
+        $jobTitle = strtolower($empData['emp_jobtitle'] ?? '');
+
+        return $dept === 'MIS' &&
+            strpos($jobTitle, 'senior') !== false &&
+            strpos($jobTitle, 'supervisor') !== false;
     }
 
     private function isMisManager($empData)

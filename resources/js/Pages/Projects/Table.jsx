@@ -17,12 +17,14 @@ import {
     MoreOutlined,
     EditOutlined,
     LeftOutlined,
+    UserSwitchOutlined,
 } from "@ant-design/icons";
 import { Link } from "@inertiajs/react";
 import ProjectNavbar from "@/Components/ProjectNavbar";
 import ImportModal from "./ImportModal";
 import ProjectLogsModal from "./ProjectLogsModal";
 import ProjectEditDrawer from "./ProjectEditDrawer";
+import ReassignModal from "./ReassignModal";
 import useProjectLogs from "@/Hooks/useProjectLogs";
 import useProjectConstants from "@/Hooks/useProjectConstants";
 import ProjectTableSkeleton from "./ProjectTableSkeleton";
@@ -38,6 +40,7 @@ export default function ProjectsTable() {
         emp_data,
         programmers,
         statusCounts,
+        canEditAssignedTo,
     } = usePage().props;
     console.log(usePage().props);
 
@@ -49,6 +52,7 @@ export default function ProjectsTable() {
     const [showImportModal, setShowImportModal] = useState(false);
     const [showLogsModal, setShowLogsModal] = useState(false);
     const [showEditDrawer, setShowEditDrawer] = useState(false);
+    const [showReassignModal, setShowReassignModal] = useState(false);
     const [selectedProject, setSelectedProject] = useState(null);
     const [drawerMode, setDrawerMode] = useState("edit");
 
@@ -94,6 +98,12 @@ export default function ProjectsTable() {
         setSelectedProject(project);
         setDrawerMode("edit");
         setShowEditDrawer(true);
+    };
+
+    // 👥 Reassign Programmers - Only for MIS Senior Supervisor
+    const handleReassign = (project) => {
+        setSelectedProject(project);
+        setShowReassignModal(true);
     };
 
     // 🔍 Search
@@ -426,6 +436,17 @@ export default function ProjectsTable() {
                               },
                           ]
                         : []),
+                    // Only show Reassign for MIS Senior Supervisor
+                    ...(canEditAssignedTo
+                        ? [
+                              {
+                                  key: "reassign",
+                                  label: "Reassign Programmers",
+                                  icon: <UserSwitchOutlined />,
+                                  onClick: () => handleReassign(record),
+                              },
+                          ]
+                        : []),
                     {
                         key: "viewLogs",
                         label: "View Logs",
@@ -535,6 +556,25 @@ export default function ProjectsTable() {
                     fetchProjectLogs(selectedProject.id, page)
                 }
                 projectName={selectedProject?.name}
+            />
+
+            {/* 👥 Reassign Programmers Modal */}
+            <ReassignModal
+                isOpen={showReassignModal}
+                onClose={() => setShowReassignModal(false)}
+                project={selectedProject}
+                onSuccess={() => {
+                    const encoded = encodeParams(filters);
+                    setLoading(true);
+                    router.get(
+                        route("project.list"),
+                        { q: encoded },
+                        {
+                            preserveState: true,
+                            onFinish: () => setLoading(false),
+                        }
+                    );
+                }}
             />
 
             {/* ✏️ Create/Edit Project Drawer */}

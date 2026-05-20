@@ -483,6 +483,37 @@ class ProjectService
         return $this->projectRepository->getHandlerOptions($departments);
     }
 
+    public function getProgrammers()
+    {
+        return $this->projectRepository->getProgrammers();
+    }
+
+    public function updateAssignedTo($projectId, array $assignedIds, $updatedBy)
+    {
+        $project = $this->projectRepository->getProjectById($projectId);
+        if (!$project) {
+            throw new \Exception("Project not found");
+        }
+
+        $updateData = [
+            'ASSIGNED_PROGS' => !empty($assignedIds) ? implode(',', $assignedIds) : null,
+            'UPDATED_BY' => $updatedBy,
+            'UPDATED_AT' => now(),
+        ];
+
+        $this->projectRepository->updateProject($projectId, $updateData);
+
+        $this->logAction(
+            $projectId,
+            'REASSIGNED',
+            'Assigned programmers updated',
+            !empty($assignedIds) ? implode(',', $assignedIds) : null,
+            $updatedBy
+        );
+
+        return true;
+    }
+
     private function getActionTypeForStatus($status)
     {
         $map = [

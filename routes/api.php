@@ -154,6 +154,10 @@ Route::prefix('api')->group(function () {
     Route::get('/tickets/assigned/{empId}', [TicketingController::class, 'getAssignedTickets']);
     Route::get('/tickets/count', [TicketingController::class, 'getTicketsCount'])->name('tickets.count');
 
+    Route::get('/projects/programmers', [ProjectController::class, 'getProgrammers'])
+        ->name('projects.getProgrammers');
+    Route::patch('/projects/{project}/assigned-to', [ProjectController::class, 'updateAssignedTo'])
+        ->name('projects.updateAssignedTo');
     Route::get('/projects/assigned/{empId}', [ProjectController::class, 'getAssignedProjects']);
     Route::get('/projects/handlers/{department}', [ProjectController::class, 'getHandlerOptionsByDepartment'])
         ->name('projects.getHandlers');
