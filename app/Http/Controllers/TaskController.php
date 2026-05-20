@@ -39,7 +39,7 @@ class TaskController extends Controller
             return response()->json(['success' => true, 'message' => 'Tasks created successfully']);
         } catch (\Exception $e) {
             Log::error('Task creation failed: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to create tasks'], 500);
+            return response()->json(['error' => 'Failed to create tasks: ' . $e->getMessage()], 500);
         }
     }
 

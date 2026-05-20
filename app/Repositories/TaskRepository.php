@@ -34,9 +34,9 @@ class TaskRepository
     }
     public function getLatestTaskId()
     {
-        return DB::connection('task') // use the correct connection name
+        return DB::connection('task')
             ->table('daily_tasks')
-            ->orderBy('CREATED_AT', 'desc')
+            ->orderBy('ID', 'desc')
             ->value('TASK_ID');
     }
     public function getProgrammersList()
