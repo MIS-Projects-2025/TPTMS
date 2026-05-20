@@ -83,7 +83,7 @@ class ProjectController extends Controller
             return redirect()->back()->with('error', 'Failed to load projects: ' . $e->getMessage());
         }
     }
-    public function update(Request $request, $projectId)
+    public function update(Request $request, $project)
     {
         // dd($request->all());
         try {
@@ -103,7 +103,7 @@ class ProjectController extends Controller
             ]);
 
             $this->projectService->updateProject(
-                $projectId,
+                $project,
                 $validated,
                 $empData['emp_id']
             );
