@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import Dropdown from "@/Components/sidebar/Dropdown";
+import Dropdown from "@/Components/sidebar/DropDown";
 import SidebarLink from "@/Components/sidebar/SidebarLink";
 import { usePage } from "@inertiajs/react";
 import {
